@@ -1,0 +1,115 @@
+import React, { useEffect, useState, useRef } from 'react';
+import { StatusBar } from 'expo-status-bar';
+import { NavigationContainer } from '@react-navigation/native';
+import * as Linking from 'expo-linking';
+import { AppState, AppStateStatus, Text } from 'react-native';
+import { AuthProvider } from './src/contexts/AuthContext';
+import { MusicProvider } from './src/contexts/MusicContext';
+import AppNavigator from './src/navigation/AppNavigator';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
+import UpdateModal from './src/components/UpdateModal';
+import { checkForUpdates, cleanupOldUpdates } from './src/services/updateChecker';
+import { UpdateInfo } from './src/types/update';
+
+export default function App() {
+    const [showUpdateModal, setShowUpdateModal] = useState(false);
+    const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+    const appState = useRef(AppState.currentState);
+
+    // Configure deep linking for React Navigation
+    // Support both 'exp://' (Expo Go) and 'zumi://' (production) schemes
+    // IMPORTANT: We filter out auth-success links to let AuthContext handle them
+    const linking = {
+        prefixes: ['zumi://', 'exp://'],
+        config: {
+            screens: {},
+        },
+        // Filter function to prevent navigation from handling auth links
+        getPathFromState: (state: any, config: any) => {
+            // Let React Navigation handle normal deep links
+            return null;
+        },
+    };
+
+    // Check for updates on app launch
+    useEffect(() => {
+        checkForUpdatesOnLaunch();
+
+        // Cleanup old update files
+        cleanupOldUpdates().catch(console.error);
+    }, []);
+
+    // Check for updates when app comes to foreground
+    useEffect(() => {
+        const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+        return () => {
+            subscription.remove();
+        };
+    }, []);
+
+    const handleAppStateChange = async (nextAppState: AppStateStatus) => {
+        // When app comes to foreground from background
+        if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+            console.log('App has come to the foreground - checking for updates');
+            await checkForUpdatesOnLaunch();
+        }
+
+        appState.current = nextAppState;
+    };
+
+    const checkForUpdatesOnLaunch = async () => {
+        try {
+            console.log('Checking for app updates...');
+            const { hasUpdate, updateInfo: latestUpdateInfo } = await checkForUpdates();
+
+            if (hasUpdate && latestUpdateInfo) {
+                console.log('Update available:', latestUpdateInfo.version);
+                setUpdateInfo(latestUpdateInfo);
+                setShowUpdateModal(true);
+            } else {
+                console.log('App is up to date');
+            }
+        } catch (error) {
+            console.error('Failed to check for updates:', error);
+            // Silently fail - don't interrupt user experience
+        }
+    };
+
+    const handleCloseUpdateModal = () => {
+        // Only allow closing if not a forced update
+        if (updateInfo && !updateInfo.forceUpdate) {
+            setShowUpdateModal(false);
+        }
+    };
+
+    const handleUpdateComplete = () => {
+        console.log('Update download complete - installer launched');
+        // Modal stays open, user will see installer
+    };
+
+    return (
+        <GestureHandlerRootView style={{ flex: 1 }}>
+            <AuthProvider>
+                <MusicProvider>
+                    <NavigationContainer
+                        linking={linking}
+                        fallback={<Text>Loading...</Text>}
+                        onReady={() => console.log('🎵 Navigation ready')}
+                    >
+                        <AppNavigator />
+                        <StatusBar style="light" />
+                    </NavigationContainer>
+
+                    {/* Update Modal - Global overlay */}
+                    <UpdateModal
+                        visible={showUpdateModal}
+                        updateInfo={updateInfo}
+                        onClose={handleCloseUpdateModal}
+                        onUpdateComplete={handleUpdateComplete}
+                    />
+                </MusicProvider>
+            </AuthProvider>
+        </GestureHandlerRootView>
+    );
+}

@@ -1,0 +1,48 @@
+{
+	"expo": {
+		"name": "Zumi Music",
+		"slug": "zumi-mobile",
+		"version": "1.0.0",
+		"orientation": "portrait",
+		"icon": "./assets/icon.png",
+		"userInterfaceStyle": "dark",
+		"splash": {
+			"image": "./assets/splash-icon.png",
+			"resizeMode": "contain",
+			"backgroundColor": "#6e254a"
+		},
+		"assetBundlePatterns": [
+			"**/*"
+		],
+		"ios": {
+			"supportsTablet": true,
+			"bundleIdentifier": "fr.phearion.zumi"
+		},
+		"android": {
+			"adaptiveIcon": {
+				"foregroundImage": "./assets/adaptive-icon.png",
+				"backgroundColor": "#6e254a"
+			},
+			"package": "fr.phearion.zumi",
+			"permissions": [
+				"REQUEST_INSTALL_PACKAGES",
+				"WRITE_EXTERNAL_STORAGE",
+				"READ_EXTERNAL_STORAGE"
+			]
+		},
+		"web": {
+			"favicon": "./assets/favicon.png"
+		},
+		"scheme": "exp",
+		"plugins": [
+			"expo-secure-store"
+		],
+		"extra": {
+			"apiUrl": process.env.EXPO_PUBLIC_API_URL,
+			"deepLinkScheme": process.env.EXPO_PUBLIC_DEEP_LINK_SCHEME,
+			"eas": {
+				"projectId": "anonymous"
+			}
+		}
+	}
+}

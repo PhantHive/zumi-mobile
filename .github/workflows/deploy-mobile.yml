@@ -1,0 +1,98 @@
+name: Zumi Mobile Deployment
+on:
+  push:
+    tags:
+      - 'mobile-v*'
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        run: npm install
+
+      - name: Extract version from tag
+        run: |
+          TAG_NAME=$(git describe --tags --abbrev=0 | sed 's/mobile-v//')
+          echo "VERSION=$TAG_NAME" >> $GITHUB_ENV
+          APK_NAME="zumi-mobile-v${TAG_NAME}.apk"
+          echo "APK_NAME=$APK_NAME" >> $GITHUB_ENV
+
+      - name: Create mobile environment
+        run: |
+          cat > .env << EOF
+          EXPO_PUBLIC_API_URL=http://51.210.148.226:31856
+          EXPO_PUBLIC_DEEP_LINK_SCHEME=zumi
+          EXPO_PUBLIC_APP_NAME=Zumi Music
+          EOF
+          
+          echo "✅ Environment configured"
+
+      - name: Update app.json version
+        run: |
+          node -e "
+          const fs = require('fs');
+          const appJson = JSON.parse(fs.readFileSync('app.json', 'utf8'));
+          appJson.expo.version = '${{ env.VERSION }}';
+          const versionCode = parseInt('${{ env.VERSION }}'.replace(/\./g, ''));
+          appJson.expo.android.versionCode = versionCode;
+          fs.writeFileSync('app.json', JSON.stringify(appJson, null, 2));
+          console.log('✅ Updated to version ${{ env.VERSION }}, versionCode:', versionCode);
+          "
+
+      - name: Prebuild Android
+        run: npx expo prebuild --platform android --clean
+
+      - name: Build APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleRelease
+          cd ..
+          echo "✅ APK built successfully"
+
+      - name: Deploy APK
+        run: |
+          # Create releases directory
+          mkdir -p /opt/zumi-mobile/releases
+          
+          # Copy APK to releases
+          cp android/app/build/outputs/apk/release/app-release.apk /opt/zumi-mobile/releases/${{ env.APK_NAME }}
+          
+          # Get API_PORT from server env
+          API_PORT=$(grep API_PORT /home/Phearion/Zumi/.env | cut -d '=' -f2 | tr -d '\r\n ')
+          
+          # Create version.json
+          cat > /opt/zumi-mobile/releases/version.json << EOF
+          {
+            "version": "${{ env.VERSION }}",
+            "versionCode": $(echo "${{ env.VERSION }}" | tr -d '.'),
+            "downloadUrl": "http://51.210.148.226:${API_PORT}/mobile/${{ env.APK_NAME }}",
+            "releaseNotes": "Update to version ${{ env.VERSION }}",
+            "minVersion": "1.0.0",
+            "forceUpdate": false,
+            "releaseDate": "$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          }
+          EOF
+          
+          # Keep only last 5 APKs
+          cd /opt/zumi-mobile/releases
+          ls -t zumi-mobile-*.apk 2>/dev/null | tail -n +6 | xargs -r rm || true
+          
+          echo "✅ Deployment complete!"
+          echo "📦 APK: /opt/zumi-mobile/releases/${{ env.APK_NAME }}"
+          echo "🔗 Version: http://51.210.148.226:${API_PORT}/mobile/version.json"
+
+      - name: Cleanup build files
+        run: |
+          rm -rf android/app/build
+          echo "✅ Cleaned up build artifacts"
