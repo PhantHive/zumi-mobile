@@ -34,6 +34,7 @@
     "expo-linear-gradient": "^15.0.7",
     "expo-secure-store": "^15.0.7",
     "expo-sensors": "^15.0.7",
+    "expo-splash-screen": "^31.0.11",
     "expo-status-bar": "~3.0.8",
     "expo-web-browser": "^15.0.9",
     "fast-average-color": "^9.5.0",

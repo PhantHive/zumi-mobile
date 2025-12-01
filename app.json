@@ -11,12 +11,18 @@
       "resizeMode": "contain",
       "backgroundColor": "#6e254a"
     },
+    "jsEngine": "hermes",
     "assetBundlePatterns": [
       "**/*"
     ],
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "fr.phearion.zumi"
+      "bundleIdentifier": "fr.phearion.zumi",
+      "splash": {
+        "image": "./assets/splash-icon.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#6e254a"
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -28,14 +34,32 @@
         "REQUEST_INSTALL_PACKAGES",
         "WRITE_EXTERNAL_STORAGE",
         "READ_EXTERNAL_STORAGE"
-      ]
+      ],
+      "splash": {
+        "image": "./assets/splash-icon.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#6e254a",
+        "mdpi": "./assets/splash-icon.png",
+        "hdpi": "./assets/splash-icon.png",
+        "xhdpi": "./assets/splash-icon.png",
+        "xxhdpi": "./assets/splash-icon.png",
+        "xxxhdpi": "./assets/splash-icon.png"
+      }
     },
     "web": {
       "favicon": "./assets/favicon.png"
     },
     "scheme": "zumi",
     "plugins": [
-      "expo-secure-store"
+      "expo-secure-store",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#6e254a",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200
+        }
+      ]
     ],
     "extra": {
       "apiUrl": "https://api.international.phearion.fr/zumi",

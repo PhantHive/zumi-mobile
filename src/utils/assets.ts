@@ -5,7 +5,7 @@
  */
 
 export const images = {
-    mascot: require('../../assets/icon.png'),
+    mascot: require('../../assets/splash-icon.png'),
     zumi: require('../../assets/images/zumi.png'),
     placeholder: require('../../assets/images/placeholder.jpg'),
 };

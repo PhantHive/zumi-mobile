@@ -1,5 +1,6 @@
 // src/navigation/AppNavigator.tsx
 import React, { useState, useEffect } from 'react';
+import { View, StyleSheet } from 'react-native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
@@ -151,9 +152,13 @@ const AppNavigator = () => {
         startInitialLoad();
     };
 
-    // Only show auth loading, NOT music loading
+    // Show splash screen while checking auth or PIN
     if (authLoading || checkingPin) {
-        return null; // Show nothing during auth check
+        return (
+            <View style={styles.splashContainer}>
+                {/* Native splash screen will show here */}
+            </View>
+        );
     }
 
     return (
@@ -175,6 +180,13 @@ const AppNavigator = () => {
         </>
     );
 };
+
+const styles = StyleSheet.create({
+    splashContainer: {
+        flex: 1,
+        backgroundColor: '#6e254a',
+    },
+});
 
 export default AppNavigator;
 

@@ -3,6 +3,7 @@ import { StatusBar } from 'expo-status-bar';
 import { NavigationContainer } from '@react-navigation/native';
 import * as Linking from 'expo-linking';
 import { AppState, AppStateStatus, Text } from 'react-native';
+import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { MusicProvider } from './src/contexts/MusicContext';
 import AppNavigator from './src/navigation/AppNavigator';
@@ -11,6 +12,9 @@ import UpdateModal from './src/components/UpdateModal';
 import LoadingScreen from './src/screens/LoadingScreen';
 import { checkForUpdates, cleanupOldUpdates } from './src/services/updateChecker';
 import { UpdateInfo } from './src/types/update';
+
+// Keep the splash screen visible while we fetch resources
+SplashScreen.preventAutoHideAsync();
 
 export default function App() {
     const [showUpdateModal, setShowUpdateModal] = useState(false);
@@ -65,17 +69,19 @@ export default function App() {
 
             setLoadingMessage('Loading your music...');
             // Give a moment for smooth transition
-            await new Promise(resolve => setTimeout(resolve, 800));
+            await new Promise(resolve => setTimeout(resolve, 500));
 
             // Cleanup old update files
             await cleanupOldUpdates().catch(console.error);
 
             setLoadingMessage('Almost there...');
-            await new Promise(resolve => setTimeout(resolve, 500));
+            await new Promise(resolve => setTimeout(resolve, 300));
         } catch (error) {
             console.error('Initialization error:', error);
         } finally {
             setIsInitializing(false);
+            // Hide splash screen after initialization
+            await SplashScreen.hideAsync();
         }
     };
 
@@ -109,9 +115,9 @@ export default function App() {
         // Modal stays open, user will see installer
     };
 
-    // Show loading screen during initialization
+    // Show nothing during initialization - splash screen will be visible
     if (isInitializing) {
-        return <LoadingScreen message={loadingMessage} />;
+        return null;
     }
 
     return (
@@ -120,7 +126,7 @@ export default function App() {
                 <MusicProvider>
                     <NavigationContainer
                         linking={linking}
-                        fallback={<LoadingScreen message="Initializing navigation..." />}
+                        fallback={null}
                         onReady={() => console.log('🎵 Navigation ready')}
                     >
                         <AppNavigator />
