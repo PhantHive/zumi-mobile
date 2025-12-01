@@ -80,8 +80,7 @@ export default function App() {
             console.error('Initialization error:', error);
         } finally {
             setIsInitializing(false);
-            // Hide splash screen after initialization
-            await SplashScreen.hideAsync();
+            // Don't hide splash screen here - let AppNavigator control it after PIN check
         }
     };
 

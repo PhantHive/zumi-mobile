@@ -5,6 +5,7 @@ import { createStackNavigator } from '@react-navigation/stack';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
+import * as SplashScreen from 'expo-splash-screen';
 import { useAuth } from '../contexts/AuthContext';
 import { useMusic } from '../contexts/MusicContext';
 import { apiClient } from '../services/apiClient';
@@ -98,6 +99,8 @@ const AppNavigator = () => {
             checkPinLock();
         } else {
             setCheckingPin(false);
+            // Hide splash when showing login screen
+            SplashScreen.hideAsync().catch(console.error);
         }
     }, [isAuthenticated]);
 
@@ -143,6 +146,8 @@ const AppNavigator = () => {
             console.error('Error checking PIN:', error);
         } finally {
             setCheckingPin(false);
+            // Hide splash screen after PIN check is complete
+            SplashScreen.hideAsync().catch(console.error);
         }
     };
 
@@ -189,4 +194,3 @@ const styles = StyleSheet.create({
 });
 
 export default AppNavigator;
-
