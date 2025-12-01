@@ -5,8 +5,8 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
-    Image,
 } from 'react-native';
+import { Ionicons } from '@expo/vector-icons';
 import { Album, Song } from '../types';
 import { useMusic } from '../contexts/MusicContext';
 import { apiClient } from '../services/apiClient';
@@ -21,10 +21,11 @@ interface AlbumCardProps {
     index: number;
 }
 
-const AlbumCard: React.FC<AlbumCardProps> = ({ album, index }) => {
-    const { playSong, currentSong } = useMusic();
+const AlbumCard: React.FC<AlbumCardProps> = ({ album }) => {
+    const { currentSong } = useMusic();
     const [albumColors, setAlbumColors] = useState<ExtractedColors | null>(null);
     const [albumCoverUrl, setAlbumCoverUrl] = useState<string | null>(null);
+    const [isExpanded, setIsExpanded] = useState(true);
 
     useEffect(() => {
         const loadThumbnailAndColors = async () => {
@@ -33,12 +34,10 @@ const AlbumCard: React.FC<AlbumCardProps> = ({ album, index }) => {
                     const url = await apiClient.getThumbnailUrlWithAuth(album.songs[0].thumbnailUrl);
                     setAlbumCoverUrl(url);
 
-                    // Extract colors from filename, not full URL
                     const filename = album.songs[0].thumbnailUrl;
                     const extractedColors = await extractColorsFromImage(filename);
                     setAlbumColors(extractedColors);
                 } catch (error) {
-                    // Missing thumbnails are normal, use placeholder silently
                     setAlbumCoverUrl(null);
                     setAlbumColors(null);
                 }
@@ -47,85 +46,45 @@ const AlbumCard: React.FC<AlbumCardProps> = ({ album, index }) => {
         loadThumbnailAndColors();
     }, [album.songs]);
 
-    // Get background color - use extracted color with enhanced opacity for better visibility
     const bgColor = albumColors
         ? hexToRgba(albumColors.background, 0.85)
         : 'rgba(26, 26, 46, 0.8)';
 
-    const gradientColor = albumColors
-        ? hexToRgba(albumColors.muted, 0.4)
-        : 'rgba(74, 58, 110, 0.3)';
-
     const accentColor = albumColors?.vibrant || colors.accent;
 
-    // Netflix-style ambient glow colors
-    const ambientGlow1 = albumColors
-        ? hexToRgba(albumColors.primary, 0.25)
-        : 'transparent';
-
-    const ambientGlow2 = albumColors
-        ? hexToRgba(albumColors.vibrant, 0.15)
-        : 'transparent';
-
-    const albumGlowColor = albumColors
-        ? hexToRgba(albumColors.vibrant, 0.35)
-        : 'transparent';
+    const toggleExpanded = () => {
+        setIsExpanded(!isExpanded);
+    };
 
     return (
         <View style={[styles.albumContainer, { backgroundColor: bgColor }]}>
-            {/* Netflix-style multi-layer ambient lighting */}
             {albumColors && (
                 <>
-                    {/* Radial glow from album cover position */}
                     <View
                         style={[
                             styles.ambientGlowCover,
                             {
-                                backgroundColor: ambientGlow1,
+                                backgroundColor: hexToRgba(albumColors.vibrant, 0.12),
                             }
                         ]}
                     />
-                    {/* Secondary ambient light from top-right */}
-                    <View
-                        style={[
-                            styles.ambientGlowTopRight,
-                            {
-                                backgroundColor: ambientGlow2,
-                            }
-                        ]}
-                    />
-                    {/* Gradient overlay for depth */}
                     <View
                         style={[
                             styles.gradientOverlay,
                             {
-                                backgroundColor: gradientColor
-                            }
-                        ]}
-                    />
-                    {/* Additional top gradient for depth */}
-                    <View
-                        style={[
-                            styles.gradientTop,
-                            {
-                                backgroundColor: hexToRgba(albumColors.detail, 0.15)
-                            }
-                        ]}
-                    />
-                    {/* Bottom accent for richness */}
-                    <View
-                        style={[
-                            styles.gradientBottom,
-                            {
-                                backgroundColor: hexToRgba(albumColors.secondary, 0.2)
+                                backgroundColor: hexToRgba(albumColors.background, 0.2)
                             }
                         ]}
                     />
                 </>
             )}
 
-            {/* Album Header */}
-            <View style={styles.albumHeader}>
+            {/* Album Header - Clickable */}
+            <TouchableOpacity
+                style={styles.albumHeader}
+                onPress={toggleExpanded}
+                activeOpacity={0.7}
+            >
                 <View style={styles.coverWrapper}>
                     <ImageWithLoader
                         source={albumCoverUrl ? { uri: albumCoverUrl } : images.placeholder}
@@ -133,41 +92,37 @@ const AlbumCard: React.FC<AlbumCardProps> = ({ album, index }) => {
                         style={styles.albumCover}
                         resizeMode="cover"
                     />
-                    {/* Enhanced glow effect around album cover */}
                     {albumColors && (
-                        <>
-                            <View
-                                style={[
-                                    styles.albumCoverGlow,
-                                    {
-                                        backgroundColor: albumGlowColor,
-                                        shadowColor: albumColors.vibrant,
-                                    }
-                                ]}
-                            />
-                            <View
-                                style={[
-                                    styles.albumCoverGlowOuter,
-                                    {
-                                        backgroundColor: hexToRgba(albumColors.primary, 0.2),
-                                    }
-                                ]}
-                            />
-                        </>
+                        <View
+                            style={[
+                                styles.albumCoverGlow,
+                                {
+                                    backgroundColor: hexToRgba(albumColors.vibrant, 0.2),
+                                }
+                            ]}
+                        />
                     )}
                 </View>
                 <View style={styles.albumInfo}>
                     <Text style={styles.albumTitle}>{album.name}</Text>
                     <Text style={styles.albumSubtitle}>{album.songs.length} songs</Text>
                 </View>
-            </View>
+                <Ionicons
+                    name={isExpanded ? 'chevron-up' : 'chevron-down'}
+                    size={24}
+                    color={accentColor}
+                    style={styles.chevronIcon}
+                />
+            </TouchableOpacity>
 
-            {/* Song Grid */}
-            <View style={styles.songsGrid}>
-                {album.songs.map((song) => (
-                    <SongCard key={song.id} song={song} accentColor={accentColor} />
-                ))}
-            </View>
+            {/* Song Grid - Conditional rendering */}
+            {isExpanded && (
+                <View style={styles.songsGrid}>
+                    {album.songs.map((song) => (
+                        <SongCard key={song.id} song={song} accentColor={accentColor} />
+                    ))}
+                </View>
+            )}
         </View>
     );
 };
@@ -184,7 +139,6 @@ const SongCard: React.FC<{ song: Song; accentColor: string }> = ({ song, accentC
                     const url = await apiClient.getThumbnailUrlWithAuth(song.thumbnailUrl);
                     setThumbnailUrl(url);
                 } catch (error) {
-                    // Missing thumbnails are normal, use placeholder silently
                     setThumbnailUrl(null);
                 }
             }
@@ -219,31 +173,25 @@ const SongCard: React.FC<{ song: Song; accentColor: string }> = ({ song, accentC
 
 const styles = StyleSheet.create({
     albumContainer: {
-        borderRadius: 8,
-        padding: spacing.md,
-        marginBottom: spacing.md,
+        borderRadius: 12,
+        padding: spacing.lg,
+        marginBottom: spacing.lg,
         overflow: 'hidden',
         position: 'relative',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: 'rgba(0, 0, 0, 0.2)',
     },
     ambientGlowCover: {
         position: 'absolute',
-        top: -60,
-        left: -60,
-        width: 220,
-        height: 220,
-        borderRadius: 110,
+        top: -100,
+        left: '10%',
+        right: '10%',
+        height: 200,
+        borderRadius: 100,
         zIndex: -3,
-        opacity: 0.6,
-    },
-    ambientGlowTopRight: {
-        position: 'absolute',
-        top: -50,
-        right: -70,
-        width: 250,
-        height: 250,
-        borderRadius: 125,
-        zIndex: -3,
-        opacity: 0.4,
+        opacity: 0.15,
+        transform: [{ scaleX: 1.8 }],
     },
     gradientOverlay: {
         position: 'absolute',
@@ -252,126 +200,102 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         zIndex: -2,
-        opacity: 0.6,
-    },
-    gradientTop: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '50%',
-        zIndex: -2,
-        opacity: 0.4,
-    },
-    gradientBottom: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: '35%',
-        zIndex: -2,
-        opacity: 0.3,
+        opacity: 0.25,
     },
     albumHeader: {
         flexDirection: 'row',
         alignItems: 'center',
         gap: spacing.md,
-        marginBottom: spacing.md,
+        marginBottom: spacing.lg,
     },
     coverWrapper: {
-        borderRadius: 6,
+        borderRadius: 8,
         overflow: 'visible',
-        width: 64,
-        height: 64,
+        width: 72,
+        height: 72,
         position: 'relative',
     },
     albumCover: {
         width: '100%',
         height: '100%',
-        borderRadius: 6,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        borderRadius: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
     },
     albumCoverGlow: {
         position: 'absolute',
-        top: -6,
-        left: -6,
-        right: -6,
-        bottom: -6,
+        top: -4,
+        left: -4,
+        right: -4,
+        bottom: -4,
         borderRadius: 12,
         zIndex: -1,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.7,
-        shadowRadius: 16,
-        elevation: 10,
-        opacity: 0.8,
-    },
-    albumCoverGlowOuter: {
-        position: 'absolute',
-        top: -12,
-        left: -12,
-        right: -12,
-        bottom: -12,
-        borderRadius: 18,
-        zIndex: -2,
-        opacity: 0.5,
+        opacity: 0.3,
     },
     albumInfo: {
         flex: 1,
     },
     albumTitle: {
-        fontSize: 17,
-        fontWeight: '700',
         color: colors.text,
-        marginBottom: 2,
-    },
-    albumArtist: {
-        fontSize: 13,
-        fontWeight: '500',
-        marginBottom: 2,
+        fontSize: 18,
+        fontWeight: '700',
+        marginBottom: 4,
+        letterSpacing: 0.5,
     },
     albumSubtitle: {
-        fontSize: 12,
         color: colors.textSecondary,
+        fontSize: 13,
         opacity: 0.6,
+    },
+    chevronIcon: {
+        marginLeft: spacing.xs,
     },
     songsGrid: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        gap: spacing.xs,
+        gap: spacing.sm,
+        marginTop: spacing.sm,
     },
     songCard: {
-        width: 110,
-        backgroundColor: 'rgba(0, 0, 0, 0.2)',
-        borderRadius: 6,
-        padding: spacing.xs,
+        width: '48%',
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        borderRadius: 10,
+        padding: spacing.sm,
         position: 'relative',
+        borderWidth: 1,
+        borderColor: 'rgba(255, 255, 255, 0.05)',
     },
     songThumbnail: {
         width: '100%',
         aspectRatio: 1,
-        borderRadius: 4,
+        borderRadius: 6,
         marginBottom: spacing.xs,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        backgroundColor: 'rgba(255, 255, 255, 0.02)',
     },
     playingIndicator: {
         position: 'absolute',
-        top: spacing.xs + 4,
-        right: spacing.xs + 4,
-        width: 8,
-        height: 8,
-        borderRadius: 4,
-        backgroundColor: colors.accent,
+        top: spacing.sm + 4,
+        right: spacing.sm + 4,
+        width: 6,
+        height: 6,
+        borderRadius: 3,
+        shadowColor: colors.accent,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.8,
+        shadowRadius: 4,
     },
     songTitle: {
+        color: colors.text,
         fontSize: 13,
         fontWeight: '600',
-        color: colors.text,
         marginBottom: 2,
+        lineHeight: 16,
     },
     songArtist: {
-        fontSize: 11,
         color: colors.textSecondary,
+        fontSize: 11,
+        opacity: 0.6,
     },
 });
 
 export default AlbumCard;
+

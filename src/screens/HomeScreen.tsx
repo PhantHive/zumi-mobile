@@ -1,5 +1,5 @@
 // src/screens/HomeScreen.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import {
     View,
     Text,
@@ -17,12 +17,8 @@ import { colors, spacing, typography } from '../styles/theme';
 
 const HomeScreen: React.FC = () => {
     const { user } = useAuth();
-    const { albums, refreshSongs, isLoading } = useMusic();
+    const { albums, refreshSongs } = useMusic();
     const [refreshing, setRefreshing] = useState(false);
-
-    useEffect(() => {
-        refreshSongs();
-    }, []);
 
     const onRefresh = async () => {
         setRefreshing(true);
@@ -30,14 +26,24 @@ const HomeScreen: React.FC = () => {
         setRefreshing(false);
     };
 
+    const handleUserActivity = () => {
+        // This will be called by ZumiAssistant when user activity is detected
+    };
+
+
     return (
-        <View style={styles.container}>
+        <View
+            style={styles.container}
+            onStartShouldSetResponder={() => true}
+            onResponderGrant={handleUserActivity}
+            onResponderMove={handleUserActivity}
+        >
             <LinearGradient
                 colors={[colors.primary, colors.background]}
                 style={styles.gradient}
             >
                 {/* Zumi Assistant - Fixed Position Overlay */}
-                <ZumiAssistant />
+                <ZumiAssistant onUserActivity={handleUserActivity} />
 
                 <ScrollView
                     style={styles.scrollView}
@@ -49,6 +55,8 @@ const HomeScreen: React.FC = () => {
                             tintColor={colors.accent}
                         />
                     }
+                    onTouchStart={handleUserActivity}
+                    onScrollBeginDrag={handleUserActivity}
                 >
                     {/* Header */}
                     <View style={styles.header}>
@@ -62,9 +70,7 @@ const HomeScreen: React.FC = () => {
                     {/* Albums Grid */}
                     <View style={styles.albumsSection}>
                         <Text style={styles.sectionTitle}>Your Music</Text>
-                        {isLoading ? (
-                            <Text style={styles.loadingText}>Loading music...</Text>
-                        ) : albums.length === 0 ? (
+                        {albums.length === 0 ? (
                             <View style={styles.emptyState}>
                                 <Text style={styles.emptyText}>No music yet!</Text>
                                 <Text style={styles.emptySubtext}>

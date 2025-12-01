@@ -5,10 +5,12 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import { useAuth } from '../contexts/AuthContext';
+import { useMusic } from '../contexts/MusicContext';
+import { apiClient } from '../services/apiClient';
 
 // Screens
 import LoginScreen from '../screens/LoginScreen';
-import LoadingScreen from '../screens/LoadingScreen';
+import AppLoadingScreen from '../screens/AppLoadingScreen';
 import PinLockScreen from '../screens/PinLockScreen';
 import HomeScreen from '../screens/HomeScreen';
 import LibraryScreen from '../screens/LibraryScreen';
@@ -85,7 +87,8 @@ const MainTabs = () => {
 };
 
 const AppNavigator = () => {
-    const { isAuthenticated, isLoading } = useAuth();
+    const { isAuthenticated, isLoading: authLoading } = useAuth();
+    const { isLoading: musicLoading, startInitialLoad } = useMusic();
     const [isPinLocked, setIsPinLocked] = useState(false);
     const [checkingPin, setCheckingPin] = useState(true);
 
@@ -93,15 +96,48 @@ const AppNavigator = () => {
         if (isAuthenticated) {
             checkPinLock();
         } else {
-            // If not authenticated, no need to check PIN
             setCheckingPin(false);
         }
     }, [isAuthenticated]);
 
     const checkPinLock = async () => {
         try {
-            const storedPin = await SecureStore.getItemAsync('userPin');
-            setIsPinLocked(!!storedPin);
+            // First check if user has PIN on server
+            try {
+                const profile = await apiClient.getUserProfile();
+                const hasServerPin = !!profile.pinHash;
+
+                if (hasServerPin) {
+                    console.log('✅ User has PIN on server');
+                    // User has PIN on server, require PIN entry
+                    setIsPinLocked(true);
+                } else {
+                    console.log('ℹ️ No PIN on server');
+                    // No server PIN, check local PIN
+                    const storedPin = await SecureStore.getItemAsync('userPin');
+                    const hasLocalPin = !!storedPin;
+
+                    if (hasLocalPin) {
+                        console.log('⚠️ Local PIN found but not on server, syncing...');
+                        // Has local PIN but not on server, could sync it
+                        setIsPinLocked(true);
+                    } else {
+                        console.log('ℹ️ No PIN set anywhere');
+                        // No PIN anywhere, start loading
+                        startInitialLoad();
+                    }
+                }
+            } catch (serverError) {
+                console.log('⚠️ Could not check server PIN (offline?), checking local only');
+                // Fallback to local check if server is unreachable
+                const storedPin = await SecureStore.getItemAsync('userPin');
+                const hasPin = !!storedPin;
+                setIsPinLocked(hasPin);
+
+                if (!hasPin) {
+                    startInitialLoad();
+                }
+            }
         } catch (error) {
             console.error('Error checking PIN:', error);
         } finally {
@@ -111,25 +147,34 @@ const AppNavigator = () => {
 
     const handlePinUnlock = () => {
         setIsPinLocked(false);
+        // Start loading AFTER pin is unlocked
+        startInitialLoad();
     };
 
-    if (isLoading || checkingPin) {
-        return <LoadingScreen />;
+    // Only show auth loading, NOT music loading
+    if (authLoading || checkingPin) {
+        return null; // Show nothing during auth check
     }
 
     return (
-        <Stack.Navigator screenOptions={{ headerShown: false }}>
-            {!isAuthenticated ? (
-                <Stack.Screen name="Login" component={LoginScreen} />
-            ) : isPinLocked ? (
-                <Stack.Screen name="PinLock">
-                    {() => <PinLockScreen onUnlock={handlePinUnlock} />}
-                </Stack.Screen>
-            ) : (
-                <Stack.Screen name="Main" component={MainTabs} />
-            )}
-        </Stack.Navigator>
+        <>
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+                {!isAuthenticated ? (
+                    <Stack.Screen name="Login" component={LoginScreen} />
+                ) : isPinLocked ? (
+                    <Stack.Screen name="PinLock">
+                        {() => <PinLockScreen onUnlock={handlePinUnlock} />}
+                    </Stack.Screen>
+                ) : (
+                    <Stack.Screen name="Main" component={MainTabs} />
+                )}
+            </Stack.Navigator>
+
+            {/* Loading screen overlay - only show AFTER pin check is complete and pin is unlocked */}
+            {isAuthenticated && !isPinLocked && !checkingPin && musicLoading && <AppLoadingScreen />}
+        </>
     );
 };
 
 export default AppNavigator;
+

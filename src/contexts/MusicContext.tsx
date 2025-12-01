@@ -17,9 +17,11 @@ interface MusicContextType {
     currentSong: Song | null;
     isPlaying: boolean;
     isLoading: boolean;
+    loadingProgress: number;
     position: number;
     duration: number;
     refreshSongs: () => Promise<void>;
+    startInitialLoad: () => void; // NEW: Manual trigger for initial load
     playSong: (song: Song) => void;
     pauseSong: () => void;
     resumeSong: () => void;
@@ -39,10 +41,12 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
     const [albums, setAlbums] = useState<Album[]>([]);
     const [currentSong, setCurrentSong] = useState<Song | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [isLoading, setIsLoading] = useState(false);
+    const [isLoading, setIsLoading] = useState(false); // Start as false
+    const [loadingProgress, setLoadingProgress] = useState(0);
     const [position, setPosition] = useState(0);
     const [duration, setDuration] = useState(0);
     const soundRef = React.useRef<Audio.Sound | null>(null);
+    const hasInitialLoad = React.useRef(false);
     const { user } = useAuth();
 
     // Configure audio mode
@@ -60,25 +64,39 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
         };
     }, []);
 
+    // Manual trigger for initial load - called AFTER pin unlock
+    const startInitialLoad = () => {
+        if (user && !hasInitialLoad.current) {
+            refreshSongs();
+        }
+    };
+
     const refreshSongs = async () => {
+        // Don't show loading if we already have data (for pull-to-refresh)
+        const shouldShowLoading = albums.length === 0;
+
         try {
-            setIsLoading(true);
+            if (shouldShowLoading) {
+                setIsLoading(true);
+                setLoadingProgress(0);
+            }
+
+            // Step 1: Fetch songs metadata
             const response = await apiClient.getSongs();
+            if (shouldShowLoading) setLoadingProgress(20);
 
             // Filter songs based on visibility
             const filteredSongs = response.data.filter((song: Song) => {
-                // Show public songs to everyone
                 if (song.visibility === 'public' || !song.visibility) {
                     return true;
                 }
-                // Show private songs only to the uploader
                 if (song.visibility === 'private') {
                     return song.uploadedBy === user?.email;
                 }
                 return true;
             });
 
-            // Group songs by genre first, then by album within each genre
+            // Group songs by genre
             const genreMap = new Map<string, Song[]>();
             filteredSongs.forEach((song: Song) => {
                 const genre = song.genre || 'Unknown Genre';
@@ -88,7 +106,6 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
                 genreMap.get(genre)?.push(song);
             });
 
-            // Convert to album array grouped by genre
             const albumsArray: Album[] = Array.from(genreMap.entries()).map(([genre, songs]) => ({
                 id: genre,
                 name: genre,
@@ -97,10 +114,47 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
 
             console.log('📊 Songs grouped by genre:', albumsArray.map(a => `${a.name} (${a.songs.length} songs)`));
             setAlbums(albumsArray);
+            if (shouldShowLoading) setLoadingProgress(40);
+
+            // Step 2: Preload thumbnails and colors ONLY on initial load
+            if (shouldShowLoading && !hasInitialLoad.current) {
+                const allSongs = filteredSongs;
+                const totalSongs = allSongs.length;
+                let loadedCount = 0;
+
+                const preloadPromises = allSongs.map(async (song: Song) => {
+                    if (song.thumbnailUrl) {
+                        try {
+                            await apiClient.getThumbnailUrlWithAuth(song.thumbnailUrl);
+                            const filename = song.thumbnailUrl;
+                            await apiClient.getImageColors(filename);
+
+                            loadedCount++;
+                            const progress = 40 + (loadedCount / totalSongs) * 60;
+                            setLoadingProgress(Math.round(progress));
+                        } catch (error) {
+                            loadedCount++;
+                            const progress = 40 + (loadedCount / totalSongs) * 60;
+                            setLoadingProgress(Math.round(progress));
+                        }
+                    }
+                });
+
+                await Promise.all(preloadPromises);
+                setLoadingProgress(100);
+                console.log('✅ All resources loaded!');
+                hasInitialLoad.current = true;
+            }
+
         } catch (error) {
             console.error('Error fetching songs:', error);
         } finally {
-            setIsLoading(false);
+            if (shouldShowLoading) {
+                setTimeout(() => {
+                    setIsLoading(false);
+                    setLoadingProgress(0);
+                }, 500);
+            }
         }
     };
 
@@ -208,31 +262,26 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
         }
     };
 
-    const getSound = () => soundRef.current;
+    const value: MusicContextType = {
+        albums,
+        currentSong,
+        isPlaying,
+        isLoading,
+        loadingProgress,
+        position,
+        duration,
+        refreshSongs,
+        startInitialLoad,
+        playSong,
+        pauseSong,
+        resumeSong,
+        nextSong,
+        previousSong,
+        playRandomSong,
+        seekTo,
+    };
 
-    return (
-        <MusicContext.Provider
-            value={{
-                albums,
-                currentSong,
-                isPlaying,
-                isLoading,
-                position,
-                duration,
-                refreshSongs,
-                playSong,
-                pauseSong,
-                resumeSong,
-                nextSong,
-                previousSong,
-                playRandomSong,
-                seekTo,
-                getSound,
-            }}
-        >
-            {children}
-        </MusicContext.Provider>
-    );
+    return <MusicContext.Provider value={value}>{children}</MusicContext.Provider>;
 };
 
 export const useMusic = () => {

@@ -37,9 +37,6 @@ const MiniPlayer: React.FC = () => {
     const dragPositionRef = useRef(0);
 
     const colorFadeAnim = useRef(new Animated.Value(1)).current;
-    const wave1 = useRef(new Animated.Value(0)).current;
-    const wave2 = useRef(new Animated.Value(0)).current;
-    const wave3 = useRef(new Animated.Value(0)).current;
     const progressHandleScale = useRef(new Animated.Value(0)).current;
     const progressBarTrackRef = useRef<View | null>(null);
     const trackLayoutRef = useRef<{ x: number; width: number }>({ x: 0, width: 0 });
@@ -90,29 +87,6 @@ const MiniPlayer: React.FC = () => {
         };
         loadThumbnailAndColors();
     }, [currentSong?.thumbnailUrl, colorFadeAnim]);
-
-    useEffect(() => {
-        const createWaveAnimation = (animatedValue: Animated.Value, duration: number) => {
-            return Animated.loop(
-                Animated.sequence([
-                    Animated.timing(animatedValue, {
-                        toValue: 1,
-                        duration: duration,
-                        useNativeDriver: true,
-                    }),
-                    Animated.timing(animatedValue, {
-                        toValue: 0,
-                        duration: duration,
-                        useNativeDriver: true,
-                    }),
-                ])
-            );
-        };
-
-        createWaveAnimation(wave1, 8000).start();
-        createWaveAnimation(wave2, 5000).start();
-        createWaveAnimation(wave3, 7000).start();
-    }, [wave1, wave2, wave3]);
 
     // Keep duration in a ref to avoid stale closure inside pan handlers
     useEffect(() => {
@@ -215,15 +189,6 @@ const MiniPlayer: React.FC = () => {
         : 'rgba(74, 58, 110, 0.3)';
 
     const accentColor = dynamicColors?.vibrant || colors.accent;
-    const waveColor = dynamicColors?.primary || colors.primary;
-
-    const ambientGlow1 = dynamicColors
-        ? hexToRgba(dynamicColors.primary, 0.18)
-        : 'rgba(110, 79, 143, 0.18)';
-
-    const ambientGlow2 = dynamicColors
-        ? hexToRgba(dynamicColors.vibrant, 0.12)
-        : 'rgba(147, 112, 219, 0.12)';
 
     const handleScale = progressHandleScale.interpolate({
         inputRange: [0, 1],
@@ -241,7 +206,6 @@ const MiniPlayer: React.FC = () => {
                     onLayout={(e) => {
                         const { width } = e.nativeEvent.layout;
                         trackLayoutRef.current = { x: 0, width };
-                        console.log('[MiniPlayer] Track onLayout width:', width);
                     }}
                 >
                     <Animated.View
@@ -259,6 +223,7 @@ const MiniPlayer: React.FC = () => {
                             {
                                 left: `${progress}%`,
                                 backgroundColor: accentColor,
+                                opacity: isDragging ? 1 : 0,
                                 transform: [{ scale: handleScale }],
                             }
                         ]}
@@ -273,17 +238,7 @@ const MiniPlayer: React.FC = () => {
                         style={[
                             styles.ambientGlowCenter,
                             {
-                                backgroundColor: ambientGlow1,
-                                opacity: colorFadeAnim,
-                            }
-                        ]}
-                        pointerEvents="none"
-                    />
-                    <Animated.View
-                        style={[
-                            styles.ambientGlowLeft,
-                            {
-                                backgroundColor: ambientGlow2,
+                                backgroundColor: hexToRgba(dynamicColors.vibrant, 0.08),
                                 opacity: colorFadeAnim,
                             }
                         ]}
@@ -293,27 +248,7 @@ const MiniPlayer: React.FC = () => {
                         style={[
                             styles.gradientOverlay,
                             {
-                                backgroundColor: gradientColor,
-                                opacity: colorFadeAnim,
-                            }
-                        ]}
-                        pointerEvents="none"
-                    />
-                    <Animated.View
-                        style={[
-                            styles.gradientTop,
-                            {
-                                backgroundColor: hexToRgba(dynamicColors.primary, 0.22),
-                                opacity: colorFadeAnim,
-                            }
-                        ]}
-                        pointerEvents="none"
-                    />
-                    <Animated.View
-                        style={[
-                            styles.gradientBottom,
-                            {
-                                backgroundColor: hexToRgba(dynamicColors.detail, 0.1),
+                                backgroundColor: hexToRgba(dynamicColors.background, 0.15),
                                 opacity: colorFadeAnim,
                             }
                         ]}
@@ -331,26 +266,15 @@ const MiniPlayer: React.FC = () => {
                         resizeMode="cover"
                     />
                     {dynamicColors && (
-                        <>
-                            <Animated.View
-                                style={[
-                                    styles.thumbnailGlow,
-                                    {
-                                        backgroundColor: hexToRgba(dynamicColors.vibrant, 0.4),
-                                        opacity: colorFadeAnim,
-                                    }
-                                ]}
-                            />
-                            <Animated.View
-                                style={[
-                                    styles.thumbnailGlowOuter,
-                                    {
-                                        backgroundColor: hexToRgba(dynamicColors.primary, 0.25),
-                                        opacity: colorFadeAnim,
-                                    }
-                                ]}
-                            />
-                        </>
+                        <Animated.View
+                            style={[
+                                styles.thumbnailGlow,
+                                {
+                                    backgroundColor: hexToRgba(dynamicColors.vibrant, 0.15),
+                                    opacity: colorFadeAnim,
+                                }
+                            ]}
+                        />
                     )}
                 </View>
 
@@ -370,7 +294,7 @@ const MiniPlayer: React.FC = () => {
 
                 <View style={styles.controls}>
                     <TouchableOpacity onPress={previousSong} style={styles.controlButton}>
-                        <Ionicons name="play-skip-back" size={24} color={colors.text} />
+                        <Ionicons name="play-skip-back" size={20} color={colors.text} />
                     </TouchableOpacity>
 
                     <TouchableOpacity
@@ -379,63 +303,15 @@ const MiniPlayer: React.FC = () => {
                     >
                         <Ionicons
                             name={isPlaying ? 'pause' : 'play'}
-                            size={28}
+                            size={24}
                             color={colors.text}
                         />
                     </TouchableOpacity>
 
                     <TouchableOpacity onPress={nextSong} style={styles.controlButton}>
-                        <Ionicons name="play-skip-forward" size={24} color={colors.text} />
+                        <Ionicons name="play-skip-forward" size={20} color={colors.text} />
                     </TouchableOpacity>
                 </View>
-            </View>
-
-            <View style={styles.spectrumContainer} pointerEvents="none">
-                <Animated.View
-                    style={[
-                        styles.wave,
-                        styles.wave1,
-                        {
-                            backgroundColor: waveColor,
-                            transform: [{
-                                translateX: wave1.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [0, -100],
-                                })
-                            }]
-                        }
-                    ]}
-                />
-                <Animated.View
-                    style={[
-                        styles.wave,
-                        styles.wave2,
-                        {
-                            backgroundColor: waveColor,
-                            transform: [{
-                                translateX: wave2.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [0, -80],
-                                })
-                            }]
-                        }
-                    ]}
-                />
-                <Animated.View
-                    style={[
-                        styles.wave,
-                        styles.wave3,
-                        {
-                            backgroundColor: waveColor,
-                            transform: [{
-                                translateX: wave3.interpolate({
-                                    inputRange: [0, 1],
-                                    outputRange: [0, -120],
-                                })
-                            }]
-                        }
-                    ]}
-                />
             </View>
         </Animated.View>
     );
@@ -450,16 +326,18 @@ const styles = StyleSheet.create({
         backgroundColor: 'rgba(10, 0, 20, 0.98)',
         paddingTop: 0,
         paddingBottom: 0,
-        zIndex: 9999, // ensure above main content
-        elevation: 9999, // Android stacking
-        overflow: 'visible', // don't clip the progress handle
+        zIndex: 9999,
+        elevation: 9999,
+        overflow: 'visible',
+        borderTopWidth: 1,
+        borderTopColor: 'rgba(255, 255, 255, 0.05)',
     },
     progressBarContainer: {
         width: '100%',
         height: 3,
         justifyContent: 'flex-start',
         paddingHorizontal: 0,
-        zIndex: 10000, // ensure above everything inside mini player
+        zIndex: 10000,
         position: 'absolute',
         top: 0,
         left: 0,
@@ -469,49 +347,43 @@ const styles = StyleSheet.create({
     progressBarTrack: {
         height: 3,
         width: '100%',
-        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        backgroundColor: 'rgba(255, 255, 255, 0.08)',
         position: 'relative',
     },
     progressBarFill: {
         height: '100%',
         backgroundColor: colors.accent,
         borderRadius: 0,
+        shadowColor: colors.accent,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.6,
+        shadowRadius: 4,
     },
     progressHandle: {
         position: 'absolute',
         top: '50%',
-        marginTop: -6,
-        marginLeft: -6,
-        width: 12,
-        height: 12,
-        borderRadius: 6,
+        marginTop: -5,
+        marginLeft: -5,
+        width: 10,
+        height: 10,
+        borderRadius: 5,
         backgroundColor: colors.accent,
-        shadowColor: '#000',
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.3,
-        shadowRadius: 4,
+        shadowColor: colors.accent,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.8,
+        shadowRadius: 6,
         elevation: 5,
     },
     ambientGlowCenter: {
         position: 'absolute',
-        top: -80,
-        left: '15%',
-        right: '15%',
-        height: 250,
-        borderRadius: 125,
+        top: -40,
+        left: '20%',
+        right: '20%',
+        height: 120,
+        borderRadius: 60,
         zIndex: -3,
         transform: [{ scaleX: 2.5 }],
-        opacity: 0.6,
-    },
-    ambientGlowLeft: {
-        position: 'absolute',
-        top: -60,
-        left: -80,
-        width: 250,
-        height: 250,
-        borderRadius: 125,
-        zIndex: -3,
-        opacity: 0.5,
+        opacity: 0.25,
     },
     gradientOverlay: {
         position: 'absolute',
@@ -520,31 +392,13 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         zIndex: -2,
-        opacity: 0.7,
-    },
-    gradientTop: {
-        position: 'absolute',
-        top: 0,
-        left: 0,
-        right: 0,
-        height: '60%',
-        zIndex: -2,
-        opacity: 0.5,
-    },
-    gradientBottom: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: '40%',
-        zIndex: -2,
         opacity: 0.3,
     },
     playerContent: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: spacing.lg,
-        paddingTop: 22, // Minimal space for progress bar
+        paddingTop: 18,
         paddingBottom: spacing.md,
         gap: spacing.md,
     },
@@ -552,30 +406,20 @@ const styles = StyleSheet.create({
         position: 'relative',
     },
     thumbnail: {
-        width: 56,
-        height: 56,
-        borderRadius: 6,
-        backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        width: 52,
+        height: 52,
+        borderRadius: 8,
+        backgroundColor: 'rgba(255, 255, 255, 0.03)',
     },
     thumbnailGlow: {
         position: 'absolute',
-        top: -6,
-        left: -6,
-        right: -6,
-        bottom: -6,
-        borderRadius: 12,
+        top: -3,
+        left: -3,
+        right: -3,
+        bottom: -3,
+        borderRadius: 11,
         zIndex: -1,
-        opacity: 0.8,
-    },
-    thumbnailGlowOuter: {
-        position: 'absolute',
-        top: -12,
-        left: -12,
-        right: -12,
-        bottom: -12,
-        borderRadius: 18,
-        zIndex: -2,
-        opacity: 0.5,
+        opacity: 0.4,
     },
     songInfo: {
         flex: 1,
@@ -584,7 +428,8 @@ const styles = StyleSheet.create({
         color: colors.text,
         fontWeight: '600',
         fontSize: 15,
-        marginBottom: 2,
+        marginBottom: 3,
+        letterSpacing: 0.3,
     },
     artistRow: {
         flexDirection: 'row',
@@ -595,56 +440,35 @@ const styles = StyleSheet.create({
         color: colors.textSecondary,
         fontSize: 13,
         flex: 1,
+        opacity: 0.7,
     },
     timeDisplay: {
         fontSize: 11,
-        color: 'rgba(255, 255, 255, 0.6)',
+        color: 'rgba(255, 255, 255, 0.4)',
         marginLeft: spacing.sm,
+        fontVariant: ['tabular-nums'],
     },
     controls: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.md,
+        gap: spacing.sm,
     },
     controlButton: {
-        padding: 4,
+        padding: 6,
+        opacity: 0.8,
     },
     playButton: {
         backgroundColor: colors.accent,
-        width: 42,
-        height: 42,
-        borderRadius: 21,
+        width: 44,
+        height: 44,
+        borderRadius: 22,
         justifyContent: 'center',
         alignItems: 'center',
-    },
-    spectrumContainer: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        height: 30,
-        overflow: 'hidden',
-        zIndex: -1,
-    },
-    wave: {
-        position: 'absolute',
-        bottom: 0,
-        left: 0,
-        width: '200%',
-        height: '100%',
-        backgroundColor: colors.primary,
-    },
-    wave1: {
-        bottom: 0,
-        opacity: 0.08,
-    },
-    wave2: {
-        bottom: 6,
-        opacity: 0.05,
-    },
-    wave3: {
-        bottom: 12,
-        opacity: 0.03,
+        shadowColor: colors.accent,
+        shadowOffset: { width: 0, height: 0 },
+        shadowOpacity: 0.5,
+        shadowRadius: 8,
+        elevation: 6,
     },
 });
 

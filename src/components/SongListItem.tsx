@@ -12,6 +12,8 @@ import { useMusic } from '../contexts/MusicContext';
 import { apiClient } from '../services/apiClient';
 import { colors, spacing, typography, borderRadius } from '../styles/theme';
 import { images } from '../utils/assets';
+import { extractColorsFromImage, hexToRgba } from '../utils/colorExtractor';
+import type { ExtractedColors } from '../utils/colorExtractor';
 import ImageWithLoader from './ImageWithLoader';
 
 interface SongListItemProps {
@@ -23,22 +25,29 @@ interface SongListItemProps {
 const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeToggle }) => {
     const { playSong, pauseSong } = useMusic();
     const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
-    const [isLiked, setIsLiked] = useState(song.isLiked || false);
+    const [songColors, setSongColors] = useState<ExtractedColors | null>(null);
+    const [isLiked, setIsLiked] = useState(false);
     const [isTogglingLike, setIsTogglingLike] = useState(false);
 
     useEffect(() => {
-        const loadThumbnail = async () => {
+        const loadThumbnailAndColors = async () => {
             if (song.thumbnailUrl) {
                 try {
                     const url = await apiClient.getThumbnailUrlWithAuth(song.thumbnailUrl);
                     setThumbnailUrl(url);
+
+                    // Extract colors from filename
+                    const filename = song.thumbnailUrl;
+                    const extractedColors = await extractColorsFromImage(filename);
+                    setSongColors(extractedColors);
                 } catch (error) {
                     // Missing thumbnails are normal, use placeholder silently
                     setThumbnailUrl(null);
+                    setSongColors(null);
                 }
             }
         };
-        loadThumbnail();
+        loadThumbnailAndColors();
     }, [song.thumbnailUrl]);
 
     const handlePress = () => {
@@ -65,12 +74,44 @@ const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeTogg
         }
     };
 
+    const accentColor = songColors?.vibrant || colors.accent;
+    const bgColor = isPlaying && songColors
+        ? hexToRgba(songColors.background, 0.12)
+        : 'rgba(255, 255, 255, 0.05)';
+
     return (
         <TouchableOpacity
-            style={[styles.container, isPlaying ? styles.containerActive : null]}
+            style={[
+                styles.container,
+                {
+                    backgroundColor: bgColor,
+                }
+            ]}
             onPress={handlePress}
             activeOpacity={0.7}
         >
+            {/* Subtle glow when playing */}
+            {isPlaying && songColors && (
+                <>
+                    <View
+                        style={[
+                            styles.glowEffect,
+                            {
+                                backgroundColor: hexToRgba(songColors.vibrant, 0.08),
+                            }
+                        ]}
+                    />
+                    <View
+                        style={[
+                            styles.leftAccent,
+                            {
+                                backgroundColor: accentColor,
+                            }
+                        ]}
+                    />
+                </>
+            )}
+
             {/* Thumbnail */}
             <View style={styles.thumbnailContainer}>
                 <ImageWithLoader
@@ -99,16 +140,16 @@ const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeTogg
             >
                 <Ionicons
                     name={isLiked ? 'heart' : 'heart-outline'}
-                    size={24}
-                    color={isLiked ? colors.accent : colors.textSecondary}
+                    size={20}
+                    color={isLiked ? accentColor : 'rgba(255, 255, 255, 0.4)'}
                 />
             </TouchableOpacity>
 
             {/* Play/Pause Icon */}
             <Ionicons
                 name={isPlaying ? 'pause-circle' : 'play-circle'}
-                size={32}
-                color={isPlaying ? colors.accent : colors.textSecondary}
+                size={28}
+                color={isPlaying ? accentColor : 'rgba(255, 255, 255, 0.4)'}
             />
         </TouchableOpacity>
     );
@@ -123,14 +164,29 @@ const styles = StyleSheet.create({
         marginHorizontal: spacing.md,
         marginVertical: spacing.xs,
         borderRadius: borderRadius.md,
+        position: 'relative',
+        overflow: 'hidden',
     },
-    containerActive: {
-        backgroundColor: colors.cardHover,
-        borderWidth: 1,
-        borderColor: colors.accent,
+    glowEffect: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        zIndex: -1,
+    },
+    leftAccent: {
+        position: 'absolute',
+        left: 0,
+        top: 0,
+        bottom: 0,
+        width: 3,
+        borderTopLeftRadius: borderRadius.md,
+        borderBottomLeftRadius: borderRadius.md,
     },
     thumbnailContainer: {
         marginRight: spacing.md,
+        position: 'relative',
     },
     thumbnail: {
         width: 50,
@@ -145,10 +201,13 @@ const styles = StyleSheet.create({
         color: colors.text,
         fontWeight: '600',
         marginBottom: spacing.xs / 2,
+        fontSize: 15,
     },
     artist: {
         ...typography.caption,
         color: colors.textSecondary,
+        opacity: 0.7,
+        fontSize: 13,
     },
     likeButton: {
         padding: spacing.sm,

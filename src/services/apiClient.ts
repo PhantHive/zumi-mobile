@@ -190,6 +190,27 @@ class ApiClient {
     async getImageColors(filename: string): Promise<any> {
         return this.get(`/api/songs/thumbnails/${filename}/colors`);
     }
+
+    // PIN Management APIs
+    async setPin(pinHash: string): Promise<{ message: string }> {
+        console.log('🔐 Setting PIN on server');
+        return this.post('/api/profile/pin', { pinHash });
+    }
+
+    async verifyPin(pinHash: string): Promise<{ valid: boolean }> {
+        console.log('🔐 Verifying PIN with server');
+        return this.post('/api/profile/pin/verify', { pinHash });
+    }
+
+    async deletePin(): Promise<{ message: string }> {
+        console.log('🔐 Deleting PIN from server');
+        return this.delete('/api/profile/pin');
+    }
+
+    async getUserProfile(): Promise<any> {
+        console.log('👤 Fetching user profile');
+        return this.get('/api/profile');
+    }
 }
 
 export const apiClient = new ApiClient();

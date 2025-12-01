@@ -16,6 +16,7 @@ import * as Crypto from 'expo-crypto';
 import { useAuth } from '../contexts';
 import { colors, spacing, typography, borderRadius } from '../styles';
 import PinLockScreen from './PinLockScreen';
+import { apiClient } from '../services/apiClient';
 
 const SettingsScreen: React.FC = () => {
     const { user, signOut } = useAuth();
@@ -53,6 +54,14 @@ const SettingsScreen: React.FC = () => {
                         text: 'Disable',
                         style: 'destructive',
                         onPress: async () => {
+                            try {
+                                // Delete from server first
+                                await apiClient.deletePin();
+                                console.log('✅ PIN deleted from server');
+                            } catch (error) {
+                                console.log('⚠️ Could not delete PIN from server (offline?)');
+                            }
+                            // Always delete locally regardless of server response
                             await SecureStore.deleteItemAsync('userPin');
                             setPinEnabled(false);
                         },
@@ -69,6 +78,16 @@ const SettingsScreen: React.FC = () => {
                 Crypto.CryptoDigestAlgorithm.SHA256,
                 pin
             );
+
+            // Try to save to server first
+            try {
+                await apiClient.setPin(hashedPin);
+                console.log('✅ PIN saved to server');
+            } catch (error) {
+                console.log('⚠️ Could not save PIN to server (offline?), saving locally only');
+            }
+
+            // Always save locally
             await SecureStore.setItemAsync('userPin', hashedPin);
             setPinEnabled(true);
             setIsSettingPin(false);

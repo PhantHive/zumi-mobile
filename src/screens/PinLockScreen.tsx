@@ -13,6 +13,20 @@ import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import { colors, spacing, typography } from '../styles/theme';
+import { apiClient } from '../services/apiClient';
+
+// Symbol options for PIN
+const SYMBOLS = [
+    { id: 0, emoji: '🦋', name: 'Butterfly' },
+    { id: 1, emoji: '🐍', name: 'Snake' },
+    { id: 2, emoji: '🌸', name: 'Flower' },
+    { id: 3, emoji: '🦊', name: 'Fox' },
+    { id: 4, emoji: '🐝', name: 'Bee' },
+    { id: 5, emoji: '🌺', name: 'Hibiscus' },
+    { id: 6, emoji: '🦅', name: 'Eagle' },
+    { id: 7, emoji: '🐢', name: 'Turtle' },
+    { id: 8, emoji: '🌻', name: 'Sunflower' },
+];
 
 interface PinLockScreenProps {
     onUnlock: () => void;
@@ -27,18 +41,18 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({
     isSettingPin = false,
     title,
 }) => {
-    const [pin, setPin] = useState<string>('');
-    const [confirmPin, setConfirmPin] = useState<string>('');
+    const [pin, setPin] = useState<number[]>([]);
+    const [confirmPin, setConfirmPin] = useState<number[]>([]);
     const [isConfirming, setIsConfirming] = useState(false);
     const [error, setError] = useState<string>('');
     const shakeAnimation = new Animated.Value(0);
 
-    const handleNumberPress = (num: number) => {
+    const handleSymbolPress = (symbolId: number) => {
         if (error) setError('');
 
         const currentPin = isConfirming ? confirmPin : pin;
         if (currentPin.length < 4) {
-            const newPin = currentPin + num.toString();
+            const newPin = [...currentPin, symbolId];
 
             if (isConfirming) {
                 setConfirmPin(newPin);
@@ -68,36 +82,55 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({
         }
     };
 
-    const validatePin = async (enteredPin: string) => {
+    const validatePin = async (enteredPin: number[]) => {
         try {
-            const storedPin = await SecureStore.getItemAsync('userPin');
+            const pinString = enteredPin.join(',');
             const hashedEnteredPin = await Crypto.digestStringAsync(
                 Crypto.CryptoDigestAlgorithm.SHA256,
-                enteredPin
+                pinString
             );
 
-            if (hashedEnteredPin === storedPin) {
-                onUnlock();
-            } else {
-                showError('Incorrect PIN');
-                setPin('');
+            // Try server verification first
+            try {
+                const result = await apiClient.verifyPin(hashedEnteredPin);
+                if (result.valid) {
+                    // Store locally for offline use
+                    await SecureStore.setItemAsync('userPin', hashedEnteredPin);
+                    onUnlock();
+                    return;
+                } else {
+                    showError('Incorrect PIN');
+                    setPin([]);
+                    return;
+                }
+            } catch (serverError) {
+                console.log('🔄 Server verification failed, trying local verification');
+                // Fallback to local verification if server is unreachable
+                const storedPin = await SecureStore.getItemAsync('userPin');
+                if (storedPin && hashedEnteredPin === storedPin) {
+                    onUnlock();
+                } else {
+                    showError('Incorrect PIN');
+                    setPin([]);
+                }
             }
         } catch (error) {
             console.error('Error validating PIN:', error);
             showError('Error validating PIN');
-            setPin('');
+            setPin([]);
         }
     };
 
-    const validateConfirmPin = (enteredPin: string) => {
-        if (enteredPin === pin) {
-            onSetPin?.(enteredPin);
-            setPin('');
-            setConfirmPin('');
+    const validateConfirmPin = (enteredPin: number[]) => {
+        if (JSON.stringify(enteredPin) === JSON.stringify(pin)) {
+            const pinString = enteredPin.join(',');
+            onSetPin?.(pinString);
+            setPin([]);
+            setConfirmPin([]);
             setIsConfirming(false);
         } else {
             showError('PINs do not match');
-            setConfirmPin('');
+            setConfirmPin([]);
         }
     };
 
@@ -133,48 +166,45 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({
                 ]}
             >
                 {[0, 1, 2, 3].map((index) => (
-                    <View
-                        key={index}
-                        style={[
-                            styles.pinDot,
-                            currentPin.length > index && styles.pinDotFilled,
-                            error && styles.pinDotError,
-                        ]}
-                    />
+                    <View key={index} style={styles.pinDotContainer}>
+                        {currentPin.length > index ? (
+                            <Text style={styles.pinSymbol}>
+                                {SYMBOLS[currentPin[index]].emoji}
+                            </Text>
+                        ) : (
+                            <View
+                                style={[
+                                    styles.pinDot,
+                                    error && styles.pinDotError,
+                                ]}
+                            />
+                        )}
+                    </View>
                 ))}
             </Animated.View>
         );
     };
 
     const renderKeypad = () => {
-        const numbers = [1, 2, 3, 4, 5, 6, 7, 8, 9];
-
         return (
             <View style={styles.keypad}>
-                {numbers.map((num) => (
+                {SYMBOLS.map((symbol) => (
                     <TouchableOpacity
-                        key={num}
+                        key={symbol.id}
                         style={styles.keypadButton}
-                        onPress={() => handleNumberPress(num)}
+                        onPress={() => handleSymbolPress(symbol.id)}
                         activeOpacity={0.7}
                     >
-                        <Text style={styles.keypadButtonText}>{num}</Text>
+                        <Text style={styles.symbolText}>{symbol.emoji}</Text>
+                        <Text style={styles.symbolName}>{symbol.name}</Text>
                     </TouchableOpacity>
                 ))}
-                <View style={styles.keypadButton} />
-                <TouchableOpacity
-                    style={styles.keypadButton}
-                    onPress={() => handleNumberPress(0)}
-                    activeOpacity={0.7}
-                >
-                    <Text style={styles.keypadButtonText}>0</Text>
-                </TouchableOpacity>
                 <TouchableOpacity
                     style={styles.keypadButton}
                     onPress={handleDelete}
                     activeOpacity={0.7}
                 >
-                    <Ionicons name="backspace-outline" size={28} color={colors.text} />
+                    <Ionicons name="backspace-outline" size={32} color={colors.text} />
                 </TouchableOpacity>
             </View>
         );
@@ -191,10 +221,10 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({
                     ) : (
                         <Text style={styles.subtitle}>
                             {isSettingPin && !isConfirming
-                                ? 'Choose a 4-digit PIN'
+                                ? 'Choose 4 symbols for your PIN'
                                 : isConfirming
-                                ? 'Re-enter your PIN'
-                                : 'Enter your 4-digit PIN'}
+                                ? 'Re-enter your symbol PIN'
+                                : 'Enter your 4-symbol PIN'}
                         </Text>
                     )}
                 </View>
@@ -212,73 +242,86 @@ const styles = StyleSheet.create({
     },
     content: {
         flex: 1,
-        justifyContent: 'center',
+        justifyContent: 'space-around',
         alignItems: 'center',
-        padding: spacing.xl,
+        paddingVertical: spacing.xl,
     },
     header: {
         alignItems: 'center',
-        marginBottom: spacing.xxl * 2,
     },
     title: {
-        ...typography.h1,
+        fontSize: 28,
+        fontWeight: 'bold',
         color: colors.text,
         marginTop: spacing.lg,
-        marginBottom: spacing.sm,
     },
     subtitle: {
-        ...typography.body,
-        color: colors.textSecondary,
+        fontSize: 16,
+        color: 'rgba(255, 255, 255, 0.7)',
+        marginTop: spacing.sm,
         textAlign: 'center',
+        paddingHorizontal: spacing.xl,
     },
     errorText: {
-        ...typography.body,
-        color: '#ff6b6b',
-        textAlign: 'center',
+        fontSize: 16,
+        color: colors.error,
+        marginTop: spacing.sm,
         fontWeight: '600',
     },
     pinDotsContainer: {
         flexDirection: 'row',
+        justifyContent: 'center',
+        alignItems: 'center',
         gap: spacing.lg,
-        marginBottom: spacing.xxl * 2,
+        marginVertical: spacing.xl,
+    },
+    pinDotContainer: {
+        width: 70,
+        height: 70,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
     pinDot: {
         width: 20,
         height: 20,
         borderRadius: 10,
-        backgroundColor: 'rgba(255, 255, 255, 0.2)',
+        backgroundColor: 'rgba(255, 255, 255, 0.3)',
         borderWidth: 2,
-        borderColor: colors.textSecondary,
-    },
-    pinDotFilled: {
-        backgroundColor: colors.accent,
-        borderColor: colors.accent,
+        borderColor: 'rgba(255, 255, 255, 0.5)',
     },
     pinDotError: {
-        borderColor: '#ff6b6b',
-        backgroundColor: 'rgba(255, 107, 107, 0.3)',
+        borderColor: colors.error,
+        backgroundColor: 'rgba(255, 59, 48, 0.2)',
+    },
+    pinSymbol: {
+        fontSize: 48,
     },
     keypad: {
         flexDirection: 'row',
         flexWrap: 'wrap',
-        width: 300,
-        justifyContent: 'center',
-        gap: spacing.md,
-    },
-    keypadButton: {
-        width: 75,
-        height: 75,
-        borderRadius: 37.5,
-        backgroundColor: 'rgba(255, 255, 255, 0.1)',
         justifyContent: 'center',
         alignItems: 'center',
+        maxWidth: 350,
+        gap: spacing.sm,
+    },
+    keypadButton: {
+        width: 100,
+        height: 100,
+        justifyContent: 'center',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        borderRadius: 20,
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.2)',
     },
-    keypadButtonText: {
-        ...typography.h2,
-        color: colors.text,
-        fontSize: 32,
+    symbolText: {
+        fontSize: 36,
+    },
+    symbolName: {
+        fontSize: 11,
+        color: 'rgba(255, 255, 255, 0.6)',
+        marginTop: 4,
+        fontWeight: '500',
     },
 });
 

@@ -1,12 +1,12 @@
 // src/components/ImageWithLoader.tsx
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Image, StyleSheet, Animated, ImageSourcePropType, ImageStyle, ViewStyle } from 'react-native';
+import { View, Image, StyleSheet, Animated, ImageSourcePropType, ImageURISource, ImageStyle, ViewStyle } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { colors } from '../styles/theme';
 
 interface ImageWithLoaderProps {
     source: ImageSourcePropType;
-    defaultSource?: ImageSourcePropType;
+    defaultSource?: number | ImageURISource; // Fix: Use correct type for defaultSource
     style?: ImageStyle;
     containerStyle?: ViewStyle;
     resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
