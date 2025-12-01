@@ -93,12 +93,14 @@ const AppNavigator = () => {
     const { isLoading: musicLoading, startInitialLoad } = useMusic();
     const [isPinLocked, setIsPinLocked] = useState(false);
     const [checkingPin, setCheckingPin] = useState(true);
+    const [isReady, setIsReady] = useState(false);
 
     useEffect(() => {
         if (isAuthenticated) {
             checkPinLock();
         } else {
             setCheckingPin(false);
+            setIsReady(true);
             // Hide splash when showing login screen
             SplashScreen.hideAsync().catch(console.error);
         }
@@ -146,10 +148,9 @@ const AppNavigator = () => {
             console.error('Error checking PIN:', error);
         } finally {
             setCheckingPin(false);
-            // Wait a tiny bit before hiding splash to ensure PIN screen is rendered
-            setTimeout(() => {
-                SplashScreen.hideAsync().catch(console.error);
-            }, 100);
+            setIsReady(true);
+            // Hide splash immediately - PIN screen is ready
+            SplashScreen.hideAsync().catch(console.error);
         }
     };
 
@@ -160,7 +161,7 @@ const AppNavigator = () => {
     };
 
     // Show splash screen while checking auth or PIN
-    if (authLoading || checkingPin) {
+    if (authLoading || checkingPin || !isReady) {
         return (
             <View style={styles.splashContainer}>
                 {/* Native splash screen will show here */}
