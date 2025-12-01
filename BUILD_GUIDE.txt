@@ -1,0 +1,64 @@
+ZUMI MOBILE - APK BUILD GUIDE
+==============================
+
+RECOMMENDED METHOD: EAS Build (Cloud-based)
+-------------------------------------------
+This is the easiest method and requires no Android Studio or JDK installation.
+
+Steps:
+1. Login to EAS:
+   eas login
+
+2. Configure your project (first time only):
+   eas build:configure
+
+3. Build APK in the cloud:
+   npm run build:android:cloud
+
+   OR directly:
+   eas build --platform android --profile production
+
+4. The APK will be built in the cloud and you'll get a download link.
+
+ALTERNATIVE: Local Build (Requires Android Studio & JDK)
+---------------------------------------------------------
+Only use this if you need to build locally without uploading code to Expo servers.
+
+Prerequisites:
+- Install Android Studio
+- Install JDK 17
+- Set ANDROID_HOME environment variable
+- Accept Android SDK licenses
+
+Steps:
+1. Build locally:
+   npm run build:android
+
+   OR directly:
+   eas build --platform android --profile production --local
+
+2. APK will be in: android/app/build/outputs/apk/release/
+
+USING THE BASH SCRIPT (Linux/Mac/WSL only)
+-------------------------------------------
+If you have bash available:
+   bash buildApk.sh
+
+This will:
+- Run expo prebuild
+- Build using Gradle
+- Output APK to android/app/build/outputs/apk/release/
+
+TROUBLESHOOTING
+---------------
+- If EAS asks for projectId, run: eas init
+- If you see "Android SDK not found", install Android Studio
+- If you need a signing key, EAS will generate one automatically
+- For local builds on Windows without Android Studio, use cloud build instead
+
+NOTES
+-----
+- Your app.json is configured for version 1.0.0
+- Package name: fr.phearion.zumi
+- The .env file must be present for environment variables
+
