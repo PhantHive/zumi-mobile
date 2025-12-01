@@ -110,8 +110,11 @@ const AppNavigator = () => {
         try {
             // First check if user has PIN on server
             try {
-                const profile = await apiClient.getUserProfile();
-                console.log('📋 Full profile response:', JSON.stringify(profile, null, 2));
+                const response = await apiClient.getUserProfile();
+                console.log('📋 Full profile response:', JSON.stringify(response, null, 2));
+
+                // The response has a 'data' wrapper, so access pinHash from response.data
+                const profile = response.data || response;
                 const hasServerPin = !!profile.pinHash;
 
                 console.log('🔍 pinHash value:', profile.pinHash);
