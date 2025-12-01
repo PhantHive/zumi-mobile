@@ -108,12 +108,24 @@ class ApiClient {
         return this.get('/api/songs');
     }
 
+    async getMyUploads(): Promise<{ data: any[] }> {
+        return this.get('/api/songs/my-uploads');
+    }
+
+    async getLikedSongs(): Promise<{ data: any[] }> {
+        return this.get('/api/songs/liked');
+    }
+
     async getAlbums(): Promise<{ data: string[] }> {
         return this.get('/api/songs/albums');
     }
 
     async getArtists(): Promise<{ data: string[] }> {
         return this.get('/api/songs/artists');
+    }
+
+    async toggleLike(songId: number): Promise<any> {
+        return this.post(`/api/songs/${songId}/like`);
     }
 
     async uploadSong(formData: FormData): Promise<{ data: any }> {
@@ -173,6 +185,10 @@ class ApiClient {
             // Silently fail - missing thumbnails are normal
             throw error;
         }
+    }
+
+    async getImageColors(filename: string): Promise<any> {
+        return this.get(`/api/songs/thumbnails/${filename}/colors`);
     }
 }
 

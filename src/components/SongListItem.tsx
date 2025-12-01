@@ -1,11 +1,10 @@
 // src/components/SongListItem.tsx
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import {
     View,
     Text,
     StyleSheet,
     TouchableOpacity,
-    Image,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Song } from '../types';
@@ -13,14 +12,34 @@ import { useMusic } from '../contexts/MusicContext';
 import { apiClient } from '../services/apiClient';
 import { colors, spacing, typography, borderRadius } from '../styles/theme';
 import { images } from '../utils/assets';
+import ImageWithLoader from './ImageWithLoader';
 
 interface SongListItemProps {
     song: Song;
     isPlaying: boolean;
+    onLikeToggle?: () => void;
 }
 
-const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying }) => {
+const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeToggle }) => {
     const { playSong, pauseSong } = useMusic();
+    const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
+    const [isLiked, setIsLiked] = useState(song.isLiked || false);
+    const [isTogglingLike, setIsTogglingLike] = useState(false);
+
+    useEffect(() => {
+        const loadThumbnail = async () => {
+            if (song.thumbnailUrl) {
+                try {
+                    const url = await apiClient.getThumbnailUrlWithAuth(song.thumbnailUrl);
+                    setThumbnailUrl(url);
+                } catch (error) {
+                    // Missing thumbnails are normal, use placeholder silently
+                    setThumbnailUrl(null);
+                }
+            }
+        };
+        loadThumbnail();
+    }, [song.thumbnailUrl]);
 
     const handlePress = () => {
         if (isPlaying) {
@@ -30,9 +49,21 @@ const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying }) => {
         }
     };
 
-    const thumbnailUrl = song.thumbnailUrl
-        ? apiClient.getThumbnailUrl(song.thumbnailUrl)
-        : null;
+    const handleLikePress = async (e: any) => {
+        e.stopPropagation();
+        if (isTogglingLike) return;
+
+        setIsTogglingLike(true);
+        try {
+            await apiClient.toggleLike(song.id);
+            setIsLiked(!isLiked);
+            onLikeToggle?.();
+        } catch (error) {
+            console.error('Failed to toggle like:', error);
+        } finally {
+            setIsTogglingLike(false);
+        }
+    };
 
     return (
         <TouchableOpacity
@@ -42,9 +73,11 @@ const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying }) => {
         >
             {/* Thumbnail */}
             <View style={styles.thumbnailContainer}>
-                <Image
+                <ImageWithLoader
                     source={thumbnailUrl ? { uri: thumbnailUrl } : images.placeholder}
+                    defaultSource={images.placeholder}
                     style={styles.thumbnail}
+                    resizeMode="cover"
                 />
             </View>
 
@@ -57,6 +90,19 @@ const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying }) => {
                     {song.artist}
                 </Text>
             </View>
+
+            {/* Like Button */}
+            <TouchableOpacity
+                onPress={handleLikePress}
+                style={styles.likeButton}
+                disabled={isTogglingLike}
+            >
+                <Ionicons
+                    name={isLiked ? 'heart' : 'heart-outline'}
+                    size={24}
+                    color={isLiked ? colors.accent : colors.textSecondary}
+                />
+            </TouchableOpacity>
 
             {/* Play/Pause Icon */}
             <Ionicons
@@ -91,14 +137,6 @@ const styles = StyleSheet.create({
         height: 50,
         borderRadius: borderRadius.sm,
     },
-    placeholderThumbnail: {
-        width: 50,
-        height: 50,
-        borderRadius: borderRadius.sm,
-        backgroundColor: colors.surface,
-        justifyContent: 'center',
-        alignItems: 'center',
-    },
     info: {
         flex: 1,
     },
@@ -111,6 +149,10 @@ const styles = StyleSheet.create({
     artist: {
         ...typography.caption,
         color: colors.textSecondary,
+    },
+    likeButton: {
+        padding: spacing.sm,
+        marginRight: spacing.xs,
     },
 });
 

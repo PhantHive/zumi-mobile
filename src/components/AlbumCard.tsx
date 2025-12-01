@@ -6,14 +6,15 @@ import {
     StyleSheet,
     TouchableOpacity,
     Image,
-    Animated,
 } from 'react-native';
 import { Album, Song } from '../types';
 import { useMusic } from '../contexts/MusicContext';
 import { apiClient } from '../services/apiClient';
 import { colors, spacing } from '../styles/theme';
 import { images } from '../utils/assets';
-import { extractColorsFromImage, ExtractedColors, hexToRgba } from '../utils/colorExtractor';
+import { extractColorsFromImage, hexToRgba } from '../utils/colorExtractor';
+import type { ExtractedColors } from '../utils/colorExtractor';
+import ImageWithLoader from './ImageWithLoader';
 
 interface AlbumCardProps {
     album: Album;
@@ -21,8 +22,9 @@ interface AlbumCardProps {
 }
 
 const AlbumCard: React.FC<AlbumCardProps> = ({ album, index }) => {
-    const [albumCoverUrl, setAlbumCoverUrl] = useState<string | null>(null);
+    const { playSong, currentSong } = useMusic();
     const [albumColors, setAlbumColors] = useState<ExtractedColors | null>(null);
+    const [albumCoverUrl, setAlbumCoverUrl] = useState<string | null>(null);
 
     useEffect(() => {
         const loadThumbnailAndColors = async () => {
@@ -31,8 +33,9 @@ const AlbumCard: React.FC<AlbumCardProps> = ({ album, index }) => {
                     const url = await apiClient.getThumbnailUrlWithAuth(album.songs[0].thumbnailUrl);
                     setAlbumCoverUrl(url);
 
-                    // Extract colors from the album cover - now using proper React Native implementation
-                    const extractedColors = await extractColorsFromImage(url);
+                    // Extract colors from filename, not full URL
+                    const filename = album.songs[0].thumbnailUrl;
+                    const extractedColors = await extractColorsFromImage(filename);
                     setAlbumColors(extractedColors);
                 } catch (error) {
                     // Missing thumbnails are normal, use placeholder silently
@@ -46,62 +49,111 @@ const AlbumCard: React.FC<AlbumCardProps> = ({ album, index }) => {
 
     // Get background color - use extracted color with enhanced opacity for better visibility
     const bgColor = albumColors
-        ? hexToRgba(albumColors.background, 0.7)
+        ? hexToRgba(albumColors.background, 0.85)
         : 'rgba(26, 26, 46, 0.8)';
 
     const gradientColor = albumColors
-        ? hexToRgba(albumColors.secondary, 0.45)
+        ? hexToRgba(albumColors.muted, 0.4)
         : 'rgba(74, 58, 110, 0.3)';
 
-    const accentColor = albumColors?.primary || colors.accent;
+    const accentColor = albumColors?.vibrant || colors.accent;
 
-    // Add subtle glow effect for album cover
-    const albumGlowColor = albumColors
+    // Netflix-style ambient glow colors
+    const ambientGlow1 = albumColors
         ? hexToRgba(albumColors.primary, 0.25)
+        : 'transparent';
+
+    const ambientGlow2 = albumColors
+        ? hexToRgba(albumColors.vibrant, 0.15)
+        : 'transparent';
+
+    const albumGlowColor = albumColors
+        ? hexToRgba(albumColors.vibrant, 0.35)
         : 'transparent';
 
     return (
         <View style={[styles.albumContainer, { backgroundColor: bgColor }]}>
-            {/* Multi-layer gradient overlay for Spotify/Deezer effect */}
-            <View
-                style={[
-                    styles.gradientOverlay,
-                    {
-                        backgroundColor: gradientColor
-                    }
-                ]}
-            />
-            {/* Additional top gradient for depth */}
+            {/* Netflix-style multi-layer ambient lighting */}
             {albumColors && (
-                <View
-                    style={[
-                        styles.gradientTop,
-                        {
-                            backgroundColor: hexToRgba(albumColors.detail, 0.12)
-                        }
-                    ]}
-                />
+                <>
+                    {/* Radial glow from album cover position */}
+                    <View
+                        style={[
+                            styles.ambientGlowCover,
+                            {
+                                backgroundColor: ambientGlow1,
+                            }
+                        ]}
+                    />
+                    {/* Secondary ambient light from top-right */}
+                    <View
+                        style={[
+                            styles.ambientGlowTopRight,
+                            {
+                                backgroundColor: ambientGlow2,
+                            }
+                        ]}
+                    />
+                    {/* Gradient overlay for depth */}
+                    <View
+                        style={[
+                            styles.gradientOverlay,
+                            {
+                                backgroundColor: gradientColor
+                            }
+                        ]}
+                    />
+                    {/* Additional top gradient for depth */}
+                    <View
+                        style={[
+                            styles.gradientTop,
+                            {
+                                backgroundColor: hexToRgba(albumColors.detail, 0.15)
+                            }
+                        ]}
+                    />
+                    {/* Bottom accent for richness */}
+                    <View
+                        style={[
+                            styles.gradientBottom,
+                            {
+                                backgroundColor: hexToRgba(albumColors.secondary, 0.2)
+                            }
+                        ]}
+                    />
+                </>
             )}
 
             {/* Album Header */}
             <View style={styles.albumHeader}>
                 <View style={styles.coverWrapper}>
-                    <Image
+                    <ImageWithLoader
                         source={albumCoverUrl ? { uri: albumCoverUrl } : images.placeholder}
-                        style={styles.albumCover}
                         defaultSource={images.placeholder}
+                        style={styles.albumCover}
+                        resizeMode="cover"
                     />
-                    {/* Glow effect around album cover */}
+                    {/* Enhanced glow effect around album cover */}
                     {albumColors && (
-                        <View
-                            style={[
-                                styles.albumCoverGlow,
-                                {
-                                    backgroundColor: albumGlowColor,
-                                    shadowColor: albumColors.primary,
-                                }
-                            ]}
-                        />
+                        <>
+                            <View
+                                style={[
+                                    styles.albumCoverGlow,
+                                    {
+                                        backgroundColor: albumGlowColor,
+                                        shadowColor: albumColors.vibrant,
+                                    }
+                                ]}
+                            />
+                            <View
+                                style={[
+                                    styles.albumCoverGlowOuter,
+                                    {
+                                        backgroundColor: hexToRgba(albumColors.primary, 0.2),
+                                    }
+                                ]}
+                            />
+                        </>
                     )}
                 </View>
                 <View style={styles.albumInfo}>
@@ -148,10 +200,10 @@ const SongCard: React.FC<{ song: Song; accentColor: string }> = ({ song, accentC
             ]}
             onPress={() => playSong(song)}
         >
-            <Image
+            <ImageWithLoader
                 source={thumbnailUrl ? { uri: thumbnailUrl } : images.placeholder}
-                style={styles.songThumbnail}
                 defaultSource={images.placeholder}
+                style={styles.songThumbnail}
                 resizeMode="cover"
             />
             {isActive && <View style={[styles.playingIndicator, { backgroundColor: accentColor }]} />}
@@ -173,21 +225,52 @@ const styles = StyleSheet.create({
         overflow: 'hidden',
         position: 'relative',
     },
+    ambientGlowCover: {
+        position: 'absolute',
+        top: -60,
+        left: -60,
+        width: 220,
+        height: 220,
+        borderRadius: 110,
+        zIndex: -3,
+        opacity: 0.6,
+    },
+    ambientGlowTopRight: {
+        position: 'absolute',
+        top: -50,
+        right: -70,
+        width: 250,
+        height: 250,
+        borderRadius: 125,
+        zIndex: -3,
+        opacity: 0.4,
+    },
     gradientOverlay: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
         bottom: 0,
-        zIndex: -1,
+        zIndex: -2,
+        opacity: 0.6,
     },
     gradientTop: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
-        height: '40%',
-        zIndex: -1,
+        height: '50%',
+        zIndex: -2,
+        opacity: 0.4,
+    },
+    gradientBottom: {
+        position: 'absolute',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        height: '35%',
+        zIndex: -2,
+        opacity: 0.3,
     },
     albumHeader: {
         flexDirection: 'row',
@@ -197,7 +280,7 @@ const styles = StyleSheet.create({
     },
     coverWrapper: {
         borderRadius: 6,
-        overflow: 'hidden',
+        overflow: 'visible',
         width: 64,
         height: 64,
         position: 'relative',
@@ -205,20 +288,32 @@ const styles = StyleSheet.create({
     albumCover: {
         width: '100%',
         height: '100%',
+        borderRadius: 6,
         backgroundColor: 'rgba(255, 255, 255, 0.05)',
     },
     albumCoverGlow: {
         position: 'absolute',
-        top: -3,
-        left: -3,
-        right: -3,
-        bottom: -3,
-        borderRadius: 9,
+        top: -6,
+        left: -6,
+        right: -6,
+        bottom: -6,
+        borderRadius: 12,
         zIndex: -1,
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.5,
-        shadowRadius: 8,
-        elevation: 8,
+        shadowOpacity: 0.7,
+        shadowRadius: 16,
+        elevation: 10,
+        opacity: 0.8,
+    },
+    albumCoverGlowOuter: {
+        position: 'absolute',
+        top: -12,
+        left: -12,
+        right: -12,
+        bottom: -12,
+        borderRadius: 18,
+        zIndex: -2,
+        opacity: 0.5,
     },
     albumInfo: {
         flex: 1,
@@ -251,36 +346,31 @@ const styles = StyleSheet.create({
         padding: spacing.xs,
         position: 'relative',
     },
-    songCardActive: {
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+    songThumbnail: {
+        width: '100%',
+        aspectRatio: 1,
+        borderRadius: 4,
+        marginBottom: spacing.xs,
+        backgroundColor: 'rgba(255, 255, 255, 0.05)',
     },
     playingIndicator: {
         position: 'absolute',
-        top: 6,
-        right: 6,
-        width: 6,
-        height: 6,
-        borderRadius: 3,
-        zIndex: 1,
-    },
-    songThumbnail: {
-        width: 110 - (spacing.xs * 2), // Card width minus padding
-        height: 110 - (spacing.xs * 2), // Square
+        top: spacing.xs + 4,
+        right: spacing.xs + 4,
+        width: 8,
+        height: 8,
         borderRadius: 4,
-        marginBottom: spacing.xs,
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        backgroundColor: colors.accent,
     },
     songTitle: {
+        fontSize: 13,
         fontWeight: '600',
-        fontSize: 12,
         color: colors.text,
         marginBottom: 2,
-        height: 32,
     },
     songArtist: {
         fontSize: 11,
         color: colors.textSecondary,
-        opacity: 0.7,
     },
 });
 

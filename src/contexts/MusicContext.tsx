@@ -17,6 +17,8 @@ interface MusicContextType {
     currentSong: Song | null;
     isPlaying: boolean;
     isLoading: boolean;
+    position: number;
+    duration: number;
     refreshSongs: () => Promise<void>;
     playSong: (song: Song) => void;
     pauseSong: () => void;
@@ -24,6 +26,7 @@ interface MusicContextType {
     nextSong: () => void;
     previousSong: () => void;
     playRandomSong: () => void;
+    seekTo: (positionMillis: number) => Promise<void>;
 }
 
 const MusicContext = createContext<MusicContextType | undefined>(undefined);
@@ -37,6 +40,8 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
     const [currentSong, setCurrentSong] = useState<Song | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [isLoading, setIsLoading] = useState(false);
+    const [position, setPosition] = useState(0);
+    const [duration, setDuration] = useState(0);
     const soundRef = React.useRef<Audio.Sound | null>(null);
     const { user } = useAuth();
 
@@ -136,6 +141,8 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
     const onPlaybackStatusUpdate = (status: any) => {
         if (status.isLoaded) {
             setIsPlaying(status.isPlaying);
+            setPosition(status.positionMillis);
+            setDuration(status.durationMillis);
 
             // Auto-play next song when current one finishes
             if (status.didJustFinish) {
@@ -191,6 +198,18 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
         playSong(allSongs[randomIndex]);
     };
 
+    const seekTo = async (positionMillis: number) => {
+        if (soundRef.current) {
+            try {
+                await soundRef.current.setPositionAsync(positionMillis);
+            } catch (error) {
+                console.error('Error seeking:', error);
+            }
+        }
+    };
+
+    const getSound = () => soundRef.current;
+
     return (
         <MusicContext.Provider
             value={{
@@ -198,6 +217,8 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
                 currentSong,
                 isPlaying,
                 isLoading,
+                position,
+                duration,
                 refreshSongs,
                 playSong,
                 pauseSong,
@@ -205,6 +226,8 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
                 nextSong,
                 previousSong,
                 playRandomSong,
+                seekTo,
+                getSound,
             }}
         >
             {children}

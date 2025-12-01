@@ -8,12 +8,15 @@ import { MusicProvider } from './src/contexts/MusicContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import UpdateModal from './src/components/UpdateModal';
+import LoadingScreen from './src/screens/LoadingScreen';
 import { checkForUpdates, cleanupOldUpdates } from './src/services/updateChecker';
 import { UpdateInfo } from './src/types/update';
 
 export default function App() {
     const [showUpdateModal, setShowUpdateModal] = useState(false);
     const [updateInfo, setUpdateInfo] = useState<UpdateInfo | null>(null);
+    const [isInitializing, setIsInitializing] = useState(true);
+    const [loadingMessage, setLoadingMessage] = useState('Getting things ready for you...');
     const appState = useRef(AppState.currentState);
 
     // Configure deep linking for React Navigation
@@ -33,10 +36,7 @@ export default function App() {
 
     // Check for updates on app launch
     useEffect(() => {
-        checkForUpdatesOnLaunch();
-
-        // Cleanup old update files
-        cleanupOldUpdates().catch(console.error);
+        initializeApp();
     }, []);
 
     // Check for updates when app comes to foreground
@@ -56,6 +56,27 @@ export default function App() {
         }
 
         appState.current = nextAppState;
+    };
+
+    const initializeApp = async () => {
+        try {
+            setLoadingMessage('Checking for updates...');
+            await checkForUpdatesOnLaunch();
+
+            setLoadingMessage('Loading your music...');
+            // Give a moment for smooth transition
+            await new Promise(resolve => setTimeout(resolve, 800));
+
+            // Cleanup old update files
+            await cleanupOldUpdates().catch(console.error);
+
+            setLoadingMessage('Almost there...');
+            await new Promise(resolve => setTimeout(resolve, 500));
+        } catch (error) {
+            console.error('Initialization error:', error);
+        } finally {
+            setIsInitializing(false);
+        }
     };
 
     const checkForUpdatesOnLaunch = async () => {
@@ -88,13 +109,18 @@ export default function App() {
         // Modal stays open, user will see installer
     };
 
+    // Show loading screen during initialization
+    if (isInitializing) {
+        return <LoadingScreen message={loadingMessage} />;
+    }
+
     return (
         <GestureHandlerRootView style={{ flex: 1 }}>
             <AuthProvider>
                 <MusicProvider>
                     <NavigationContainer
                         linking={linking}
-                        fallback={<Text>Loading...</Text>}
+                        fallback={<LoadingScreen message="Initializing navigation..." />}
                         onReady={() => console.log('🎵 Navigation ready')}
                     >
                         <AppNavigator />

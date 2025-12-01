@@ -5,15 +5,17 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
-    Image,
     Animated,
+    PanResponder,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMusic } from '../contexts/MusicContext';
 import { apiClient } from '../services/apiClient';
-import { colors, spacing, borderRadius } from '../styles/theme';
+import { colors, spacing } from '../styles/theme';
 import { images } from '../utils/assets';
-import { extractColorsFromImage, ExtractedColors, hexToRgba } from '../utils/colorExtractor';
+import { extractColorsFromImage, hexToRgba } from '../utils/colorExtractor';
+import type { ExtractedColors } from '../utils/colorExtractor';
+import ImageWithLoader from './ImageWithLoader';
 
 const MiniPlayer: React.FC = () => {
     const {
@@ -23,28 +25,40 @@ const MiniPlayer: React.FC = () => {
         resumeSong,
         nextSong,
         previousSong,
+        position,
+        duration,
+        seekTo,
     } = useMusic();
 
-    const [progress, setProgress] = useState(0);
-    const [currentTime, setCurrentTime] = useState(0);
-    const [duration, setDuration] = useState(180); // Default 3 minutes
     const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
     const [dynamicColors, setDynamicColors] = useState<ExtractedColors | null>(null);
+    const [isDragging, setIsDragging] = useState(false);
+    const [dragPosition, setDragPosition] = useState(0);
+    const dragPositionRef = useRef(0);
 
-    // Animated values for smooth color transitions (Spotify-style)
     const colorFadeAnim = useRef(new Animated.Value(1)).current;
-
-    // Wave animations
     const wave1 = useRef(new Animated.Value(0)).current;
     const wave2 = useRef(new Animated.Value(0)).current;
     const wave3 = useRef(new Animated.Value(0)).current;
+    const progressHandleScale = useRef(new Animated.Value(0)).current;
+    const progressBarTrackRef = useRef<View | null>(null);
+    const trackLayoutRef = useRef<{ x: number; width: number }>({ x: 0, width: 0 });
+    const durationRef = useRef(0);
 
-    // Load thumbnail and extract colors when song changes
+    // Convert milliseconds to seconds for display
+    const currentTime = Math.floor((isDragging ? dragPosition : position) / 1000);
+    const totalDuration = Math.floor(duration / 1000);
+    const progress = duration > 0 ? ((isDragging ? dragPosition : position) / duration) * 100 : 0;
+
+    // Reset timer when song changes
+    useEffect(() => {
+        setIsDragging(false);
+    }, [currentSong?.id]);
+
     useEffect(() => {
         const loadThumbnailAndColors = async () => {
             if (currentSong?.thumbnailUrl) {
                 try {
-                    // Fade out current colors
                     Animated.timing(colorFadeAnim, {
                         toValue: 0,
                         duration: 200,
@@ -54,18 +68,17 @@ const MiniPlayer: React.FC = () => {
                     const url = await apiClient.getThumbnailUrlWithAuth(currentSong.thumbnailUrl);
                     setThumbnailUrl(url);
 
-                    // Extract colors from the thumbnail - this now works properly!
-                    const colors = await extractColorsFromImage(url);
+                    // Extract colors from filename, not full URL
+                    const filename = currentSong.thumbnailUrl;
+                    const colors = await extractColorsFromImage(filename);
                     setDynamicColors(colors);
 
-                    // Fade in new colors smoothly
                     Animated.timing(colorFadeAnim, {
                         toValue: 1,
                         duration: 500,
                         useNativeDriver: false,
                     }).start();
                 } catch (error) {
-                    // Missing thumbnails are normal, use placeholder silently
                     setThumbnailUrl(null);
                     setDynamicColors(null);
                     colorFadeAnim.setValue(1);
@@ -76,10 +89,9 @@ const MiniPlayer: React.FC = () => {
             }
         };
         loadThumbnailAndColors();
-    }, [currentSong?.thumbnailUrl]);
+    }, [currentSong?.thumbnailUrl, colorFadeAnim]);
 
     useEffect(() => {
-        // Animate waves continuously
         const createWaveAnimation = (animatedValue: Animated.Value, duration: number) => {
             return Animated.loop(
                 Animated.sequence([
@@ -100,29 +112,80 @@ const MiniPlayer: React.FC = () => {
         createWaveAnimation(wave1, 8000).start();
         createWaveAnimation(wave2, 5000).start();
         createWaveAnimation(wave3, 7000).start();
-    }, []);
+    }, [wave1, wave2, wave3]);
 
+    // Keep duration in a ref to avoid stale closure inside pan handlers
     useEffect(() => {
-        // Simulate progress (in real app, this would come from audio player)
-        if (isPlaying) {
-            const interval = setInterval(() => {
-                setCurrentTime((prev) => {
-                    const next = prev + 1;
-                    if (next >= duration) {
-                        return 0;
-                    }
-                    return next;
-                });
-            }, 1000);
-            return () => clearInterval(interval);
-        }
-    }, [isPlaying, duration]);
+        durationRef.current = duration || 0;
+    }, [duration]);
 
-    useEffect(() => {
-        if (duration > 0) {
-            setProgress((currentTime / duration) * 100);
-        }
-    }, [currentTime, duration]);
+    // Pan responder for dragging the progress bar
+    const panResponder = useRef(
+        PanResponder.create({
+            onStartShouldSetPanResponder: () => true,
+            onMoveShouldSetPanResponder: () => true,
+            onStartShouldSetPanResponderCapture: () => true,
+            onMoveShouldSetPanResponderCapture: () => true,
+            onPanResponderTerminationRequest: () => false,
+            onShouldBlockNativeResponder: () => true,
+            onPanResponderGrant: (evt) => {
+                const d = durationRef.current;
+                if (!d || d <= 0) {
+                    console.log('[MiniPlayer] Grant ignored: no duration (ref=', d, ')');
+                    return;
+                }
+                setIsDragging(true);
+                const locX = evt.nativeEvent.locationX;
+                const width = trackLayoutRef.current.width || 0;
+                const relativeX = Math.max(0, Math.min(width, locX));
+                const newProgress = width > 0 ? (relativeX / width) : 0;
+                const newPosition = Math.max(0, Math.min(d, newProgress * d));
+                console.log('[MiniPlayer] GRANT locX:', locX, 'width:', width, 'relativeX:', relativeX, 'progress:', newProgress, 'pos:', newPosition);
+                dragPositionRef.current = newPosition;
+                setDragPosition(newPosition);
+                Animated.spring(progressHandleScale, {
+                    toValue: 1,
+                    useNativeDriver: true,
+                    friction: 5,
+                }).start();
+            },
+            onPanResponderMove: (evt) => {
+                const d = durationRef.current;
+                if (!d || d <= 0) {
+                    console.log('[MiniPlayer] Move ignored: no duration (ref=', d, ')');
+                    return;
+                }
+                const locX = evt.nativeEvent.locationX;
+                const width = trackLayoutRef.current.width || 0;
+                const relativeX = Math.max(0, Math.min(width, locX));
+                const newProgress = width > 0 ? (relativeX / width) : 0;
+                const newPosition = Math.max(0, Math.min(d, newProgress * d));
+                console.log('[MiniPlayer] MOVE locX:', locX, 'width:', width, 'relativeX:', relativeX, 'progress:', newProgress, 'pos:', newPosition);
+                dragPositionRef.current = newPosition;
+                setDragPosition(newPosition);
+            },
+            onPanResponderRelease: async () => {
+                const d = durationRef.current;
+                if (!d || d <= 0) {
+                    console.log('[MiniPlayer] Release ignored: no duration (ref=', d, ')');
+                    return;
+                }
+                const finalPosition = Math.max(0, Math.min(d, dragPositionRef.current));
+                console.log('[MiniPlayer] RELEASE seekTo:', finalPosition, 'dragPositionRef:', dragPositionRef.current, 'durationRef:', d);
+                try {
+                    await seekTo(finalPosition);
+                } catch (e) {
+                    console.log('[MiniPlayer] seekTo error:', e);
+                }
+                setIsDragging(false);
+                Animated.spring(progressHandleScale, {
+                    toValue: 0,
+                    useNativeDriver: true,
+                    friction: 5,
+                }).start();
+            },
+        })
+    ).current;
 
     if (!currentSong) return null;
 
@@ -140,7 +203,6 @@ const MiniPlayer: React.FC = () => {
         return `${mins}:${secs.toString().padStart(2, '0')}`;
     };
 
-    // Get dynamic colors or fallback to defaults - now with smooth interpolation
     const backgroundColor = colorFadeAnim.interpolate({
         inputRange: [0, 1],
         outputRange: ['rgba(10, 0, 20, 0.98)', dynamicColors
@@ -149,17 +211,84 @@ const MiniPlayer: React.FC = () => {
     });
 
     const gradientColor = dynamicColors
-        ? hexToRgba(dynamicColors.secondary, 0.4)
+        ? hexToRgba(dynamicColors.muted, 0.35)
         : 'rgba(74, 58, 110, 0.3)';
 
-    const accentColor = dynamicColors?.primary || colors.accent;
-    const waveColor = dynamicColors?.secondary || colors.primary;
+    const accentColor = dynamicColors?.vibrant || colors.accent;
+    const waveColor = dynamicColors?.primary || colors.primary;
+
+    const ambientGlow1 = dynamicColors
+        ? hexToRgba(dynamicColors.primary, 0.18)
+        : 'rgba(110, 79, 143, 0.18)';
+
+    const ambientGlow2 = dynamicColors
+        ? hexToRgba(dynamicColors.vibrant, 0.12)
+        : 'rgba(147, 112, 219, 0.12)';
+
+    const handleScale = progressHandleScale.interpolate({
+        inputRange: [0, 1],
+        outputRange: [1, 1.35], // visible at rest, grows when dragging
+    });
 
     return (
         <Animated.View style={[styles.container, { backgroundColor }]}>
-            {/* Gradient overlay for depth - Spotify/Deezer style with richer effect */}
+            <View style={styles.progressBarContainer}>
+                <View
+                    ref={progressBarTrackRef}
+                    style={styles.progressBarTrack}
+                    {...panResponder.panHandlers}
+                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
+                    onLayout={(e) => {
+                        const { width } = e.nativeEvent.layout;
+                        trackLayoutRef.current = { x: 0, width };
+                        console.log('[MiniPlayer] Track onLayout width:', width);
+                    }}
+                >
+                    <Animated.View
+                        style={[
+                            styles.progressBarFill,
+                            {
+                                width: `${progress}%`,
+                                backgroundColor: accentColor,
+                            }
+                        ]}
+                    />
+                    <Animated.View
+                        style={[
+                            styles.progressHandle,
+                            {
+                                left: `${progress}%`,
+                                backgroundColor: accentColor,
+                                transform: [{ scale: handleScale }],
+                            }
+                        ]}
+                        pointerEvents="none"
+                    />
+                </View>
+            </View>
+
             {dynamicColors && (
                 <>
+                    <Animated.View
+                        style={[
+                            styles.ambientGlowCenter,
+                            {
+                                backgroundColor: ambientGlow1,
+                                opacity: colorFadeAnim,
+                            }
+                        ]}
+                        pointerEvents="none"
+                    />
+                    <Animated.View
+                        style={[
+                            styles.ambientGlowLeft,
+                            {
+                                backgroundColor: ambientGlow2,
+                                opacity: colorFadeAnim,
+                            }
+                        ]}
+                        pointerEvents="none"
+                    />
                     <Animated.View
                         style={[
                             styles.gradientOverlay,
@@ -168,70 +297,60 @@ const MiniPlayer: React.FC = () => {
                                 opacity: colorFadeAnim,
                             }
                         ]}
+                        pointerEvents="none"
                     />
-                    {/* Additional radial gradient effect from top */}
                     <Animated.View
                         style={[
                             styles.gradientTop,
                             {
-                                backgroundColor: hexToRgba(dynamicColors.primary, 0.15),
+                                backgroundColor: hexToRgba(dynamicColors.primary, 0.22),
                                 opacity: colorFadeAnim,
                             }
                         ]}
+                        pointerEvents="none"
                     />
-                    {/* Subtle bottom accent */}
                     <Animated.View
                         style={[
                             styles.gradientBottom,
                             {
-                                backgroundColor: hexToRgba(dynamicColors.detail, 0.08),
+                                backgroundColor: hexToRgba(dynamicColors.detail, 0.1),
                                 opacity: colorFadeAnim,
                             }
                         ]}
+                        pointerEvents="none"
                     />
                 </>
             )}
 
-            {/* Progress Section */}
-            <View style={styles.progressSection}>
-                <View style={styles.progressWrapper}>
-                    <View style={styles.progressBar}>
-                        <Animated.View
-                            style={[
-                                styles.progressFill,
-                                {
-                                    width: `${progress}%`,
-                                    backgroundColor: accentColor
-                                }
-                            ]}
-                        />
-                    </View>
-                    <Text style={styles.timeDisplay}>
-                        {formatTime(currentTime)} / {formatTime(duration)}
-                    </Text>
-                </View>
-            </View>
-
-            {/* Player Content */}
             <View style={styles.playerContent}>
                 <View style={styles.thumbnailWrapper}>
-                    <Image
+                    <ImageWithLoader
                         source={thumbnailUrl ? { uri: thumbnailUrl } : images.placeholder}
-                        style={styles.thumbnail}
                         defaultSource={images.placeholder}
+                        style={styles.thumbnail}
                         resizeMode="cover"
                     />
-                    {/* Glow effect around thumbnail when colors are extracted */}
                     {dynamicColors && (
-                        <Animated.View
-                            style={[
-                                styles.thumbnailGlow,
-                                {
-                                    backgroundColor: hexToRgba(dynamicColors.primary, 0.3),
-                                    opacity: colorFadeAnim,
-                                }
-                            ]}
-                        />
+                        <>
+                            <Animated.View
+                                style={[
+                                    styles.thumbnailGlow,
+                                    {
+                                        backgroundColor: hexToRgba(dynamicColors.vibrant, 0.4),
+                                        opacity: colorFadeAnim,
+                                    }
+                                ]}
+                            />
+                            <Animated.View
+                                style={[
+                                    styles.thumbnailGlowOuter,
+                                    {
+                                        backgroundColor: hexToRgba(dynamicColors.primary, 0.25),
+                                        opacity: colorFadeAnim,
+                                    }
+                                ]}
+                            />
+                        </>
                     )}
                 </View>
 
@@ -239,9 +358,14 @@ const MiniPlayer: React.FC = () => {
                     <Text style={styles.title} numberOfLines={1}>
                         {currentSong.title}
                     </Text>
-                    <Text style={styles.artist} numberOfLines={1}>
-                        {currentSong.artist}
-                    </Text>
+                    <View style={styles.artistRow}>
+                        <Text style={styles.artist} numberOfLines={1}>
+                            {currentSong.artist}
+                        </Text>
+                        <Text style={styles.timeDisplay}>
+                            {formatTime(currentTime)} / {formatTime(totalDuration)}
+                        </Text>
+                    </View>
                 </View>
 
                 <View style={styles.controls}>
@@ -266,8 +390,7 @@ const MiniPlayer: React.FC = () => {
                 </View>
             </View>
 
-            {/* Wave Animations with dynamic colors */}
-            <View style={styles.spectrumContainer}>
+            <View style={styles.spectrumContainer} pointerEvents="none">
                 <Animated.View
                     style={[
                         styles.wave,
@@ -325,10 +448,70 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         backgroundColor: 'rgba(10, 0, 20, 0.98)',
-        paddingTop: spacing.sm,
-        paddingBottom: spacing.md,
-        zIndex: 100,
-        overflow: 'hidden',
+        paddingTop: 0,
+        paddingBottom: 0,
+        zIndex: 9999, // ensure above main content
+        elevation: 9999, // Android stacking
+        overflow: 'visible', // don't clip the progress handle
+    },
+    progressBarContainer: {
+        width: '100%',
+        height: 3,
+        justifyContent: 'flex-start',
+        paddingHorizontal: 0,
+        zIndex: 10000, // ensure above everything inside mini player
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        pointerEvents: 'auto',
+    },
+    progressBarTrack: {
+        height: 3,
+        width: '100%',
+        backgroundColor: 'rgba(255, 255, 255, 0.15)',
+        position: 'relative',
+    },
+    progressBarFill: {
+        height: '100%',
+        backgroundColor: colors.accent,
+        borderRadius: 0,
+    },
+    progressHandle: {
+        position: 'absolute',
+        top: '50%',
+        marginTop: -6,
+        marginLeft: -6,
+        width: 12,
+        height: 12,
+        borderRadius: 6,
+        backgroundColor: colors.accent,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.3,
+        shadowRadius: 4,
+        elevation: 5,
+    },
+    ambientGlowCenter: {
+        position: 'absolute',
+        top: -80,
+        left: '15%',
+        right: '15%',
+        height: 250,
+        borderRadius: 125,
+        zIndex: -3,
+        transform: [{ scaleX: 2.5 }],
+        opacity: 0.6,
+    },
+    ambientGlowLeft: {
+        position: 'absolute',
+        top: -60,
+        left: -80,
+        width: 250,
+        height: 250,
+        borderRadius: 125,
+        zIndex: -3,
+        opacity: 0.5,
     },
     gradientOverlay: {
         position: 'absolute',
@@ -337,53 +520,32 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         zIndex: -2,
+        opacity: 0.7,
     },
     gradientTop: {
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
-        height: '50%',
+        height: '60%',
         zIndex: -2,
+        opacity: 0.5,
     },
     gradientBottom: {
         position: 'absolute',
         bottom: 0,
         left: 0,
         right: 0,
-        height: '30%',
+        height: '40%',
         zIndex: -2,
-    },
-    progressSection: {
-        paddingHorizontal: spacing.lg,
-        marginBottom: spacing.xs,
-    },
-    progressWrapper: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        width: '100%',
-        gap: spacing.sm,
-    },
-    progressBar: {
-        flex: 1,
-        height: 4,
-        backgroundColor: 'rgba(255, 255, 255, 0.15)',
-        borderRadius: 2,
-    },
-    progressFill: {
-        height: '100%',
-        backgroundColor: colors.accent,
-        borderRadius: 2,
-    },
-    timeDisplay: {
-        fontSize: 11,
-        color: 'rgba(255, 255, 255, 0.6)',
-        minWidth: 70,
+        opacity: 0.3,
     },
     playerContent: {
         flexDirection: 'row',
         alignItems: 'center',
         paddingHorizontal: spacing.lg,
+        paddingTop: 22, // Minimal space for progress bar
+        paddingBottom: spacing.md,
         gap: spacing.md,
     },
     thumbnailWrapper: {
@@ -397,12 +559,23 @@ const styles = StyleSheet.create({
     },
     thumbnailGlow: {
         position: 'absolute',
-        top: -4,
-        left: -4,
-        right: -4,
-        bottom: -4,
-        borderRadius: 10,
+        top: -6,
+        left: -6,
+        right: -6,
+        bottom: -6,
+        borderRadius: 12,
         zIndex: -1,
+        opacity: 0.8,
+    },
+    thumbnailGlowOuter: {
+        position: 'absolute',
+        top: -12,
+        left: -12,
+        right: -12,
+        bottom: -12,
+        borderRadius: 18,
+        zIndex: -2,
+        opacity: 0.5,
     },
     songInfo: {
         flex: 1,
@@ -413,9 +586,20 @@ const styles = StyleSheet.create({
         fontSize: 15,
         marginBottom: 2,
     },
+    artistRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+    },
     artist: {
         color: colors.textSecondary,
         fontSize: 13,
+        flex: 1,
+    },
+    timeDisplay: {
+        fontSize: 11,
+        color: 'rgba(255, 255, 255, 0.6)',
+        marginLeft: spacing.sm,
     },
     controls: {
         flexDirection: 'row',
