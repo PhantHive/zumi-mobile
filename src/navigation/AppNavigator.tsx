@@ -111,7 +111,11 @@ const AppNavigator = () => {
             // First check if user has PIN on server
             try {
                 const profile = await apiClient.getUserProfile();
+                console.log('📋 Full profile response:', JSON.stringify(profile, null, 2));
                 const hasServerPin = !!profile.pinHash;
+
+                console.log('🔍 pinHash value:', profile.pinHash);
+                console.log('🔍 hasServerPin:', hasServerPin);
 
                 if (hasServerPin) {
                     console.log('✅ User has PIN on server');
@@ -169,19 +173,28 @@ const AppNavigator = () => {
         );
     }
 
+    // Don't render Navigator until we know what screen to show
+    // This prevents MainTabs from mounting during PIN check
+    let initialScreen;
+    if (!isAuthenticated) {
+        initialScreen = <LoginScreen />;
+    } else if (isPinLocked) {
+        initialScreen = <PinLockScreen onUnlock={handlePinUnlock} />;
+    } else {
+        initialScreen = null; // Will show MainTabs via Stack.Navigator
+    }
+
     return (
         <>
-            <Stack.Navigator screenOptions={{ headerShown: false }}>
-                {!isAuthenticated ? (
-                    <Stack.Screen name="Login" component={LoginScreen} />
-                ) : isPinLocked ? (
-                    <Stack.Screen name="PinLock">
-                        {() => <PinLockScreen onUnlock={handlePinUnlock} />}
-                    </Stack.Screen>
-                ) : (
+            {initialScreen ? (
+                // Show PIN or Login directly without Stack.Navigator
+                initialScreen
+            ) : (
+                // Only mount Stack.Navigator when going to MainTabs
+                <Stack.Navigator screenOptions={{ headerShown: false }}>
                     <Stack.Screen name="Main" component={MainTabs} />
-                )}
-            </Stack.Navigator>
+                </Stack.Navigator>
+            )}
 
             {/* Loading screen overlay - only show AFTER pin check is complete and pin is unlocked */}
             {isAuthenticated && !isPinLocked && !checkingPin && musicLoading && <AppLoadingScreen />}
