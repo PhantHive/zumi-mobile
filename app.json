@@ -33,7 +33,7 @@
     "web": {
       "favicon": "./assets/favicon.png"
     },
-    "scheme": "exp",
+    "scheme": "zumi",
     "plugins": [
       "expo-secure-store"
     ],
