@@ -194,22 +194,22 @@ class ApiClient {
     // PIN Management APIs
     async setPin(pinHash: string): Promise<{ message: string }> {
         console.log('🔐 Setting PIN on server');
-        return this.post('/api/profile/pin', { pinHash });
+        return this.post('/api/auth/profile/pin', { pinHash });
     }
 
     async verifyPin(pinHash: string): Promise<{ valid: boolean }> {
         console.log('🔐 Verifying PIN with server');
-        return this.post('/api/profile/pin/verify', { pinHash });
+        return this.post('/api/auth/profile/pin/verify', { pinHash });
     }
 
     async deletePin(): Promise<{ message: string }> {
         console.log('🔐 Deleting PIN from server');
-        return this.delete('/api/profile/pin');
+        return this.delete('/api/auth/profile/pin');
     }
 
     async getUserProfile(): Promise<any> {
         console.log('👤 Fetching user profile');
-        return this.get('/api/profile');
+        return this.get('/api/auth/profile');
     }
 }
 
