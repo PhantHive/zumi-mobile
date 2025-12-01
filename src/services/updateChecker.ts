@@ -24,28 +24,38 @@ export const getCurrentVersion = (): string => {
  */
 export const checkForUpdates = async (): Promise<UpdateCheckResult> => {
     try {
+        console.log('🔍 Checking for updates...');
+        const currentVersion = Application.nativeApplicationVersion || '1.0.0';
+        console.log('📱 Current version:', currentVersion);
+
         // Only check on Android
         if (Platform.OS !== 'android') {
             return { hasUpdate: false, updateInfo: null };
         }
 
-        const currentVersion = getCurrentVersion();
-        console.log('Checking for updates. Current version:', currentVersion);
+        // Add longer timeout for update check
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
 
         const response = await fetch(UPDATE_CHECK_URL, {
-            method: 'GET',
+            signal: controller.signal,
             headers: {
-                'Content-Type': 'application/json',
+                'Accept': 'application/json',
             },
         });
 
+        clearTimeout(timeoutId);
+
         if (!response.ok) {
-            throw new Error(`Update check failed: ${response.status}`);
+            console.log('⚠️ Update check endpoint not available (this is normal for first builds)');
+            return { hasUpdate: false, updateInfo: null };
         }
 
         const updateInfo: UpdateInfo = await response.json();
+        console.log('📦 Latest version from server:', updateInfo.version);
+        console.log('📦 Current version:', currentVersion);
 
-        // Check if remote version is newer
+        // Simple version comparison (assumes semantic versioning)
         const hasUpdate = isNewerVersion(updateInfo.version, currentVersion);
 
         console.log('Update check result:', {
@@ -58,9 +68,13 @@ export const checkForUpdates = async (): Promise<UpdateCheckResult> => {
             hasUpdate,
             updateInfo: hasUpdate ? updateInfo : null,
         };
-    } catch (error) {
-        console.error('Failed to check for updates:', error);
-        // Return no update on error - graceful degradation
+    } catch (error: any) {
+        // Don't throw error - just log it. Update check is not critical.
+        if (error.name === 'AbortError') {
+            console.log('⏱️ Update check timed out (this is normal if no updates are published yet)');
+        } else {
+            console.log('ℹ️ Could not check for updates (this is normal for first builds):', error.message);
+        }
         return { hasUpdate: false, updateInfo: null };
     }
 };
@@ -175,4 +189,3 @@ export const cleanupOldUpdates = async (): Promise<void> => {
         // Non-critical error, just log it
     }
 };
-

@@ -65,7 +65,10 @@ jobs:
           # Create releases directory
           mkdir -p /opt/zumi-mobile/releases
           
-          # Copy APK to releases
+          # Copy and rename APK to zumi-install.apk
+          cp android/app/build/outputs/apk/release/app-release.apk /opt/zumi-mobile/releases/zumi-install.apk
+          
+          # Also keep versioned copy
           cp android/app/build/outputs/apk/release/app-release.apk /opt/zumi-mobile/releases/${{ env.APK_NAME }}
           
           # Get API_PORT from server env
@@ -76,7 +79,7 @@ jobs:
           {
             "version": "${{ env.VERSION }}",
             "versionCode": $(echo "${{ env.VERSION }}" | tr -d '.'),
-            "downloadUrl": "http://51.210.148.226:${API_PORT}/mobile/${{ env.APK_NAME }}",
+            "downloadUrl": "http://51.210.148.226:${API_PORT}/mobile/zumi-install.apk",
             "releaseNotes": "Update to version ${{ env.VERSION }}",
             "minVersion": "1.0.0",
             "forceUpdate": false,
@@ -84,12 +87,13 @@ jobs:
           }
           EOF
           
-          # Keep only last 5 APKs
+          # Keep only last 5 versioned APKs
           cd /opt/zumi-mobile/releases
           ls -t zumi-mobile-*.apk 2>/dev/null | tail -n +6 | xargs -r rm || true
           
           echo "✅ Deployment complete!"
-          echo "📦 APK: /opt/zumi-mobile/releases/${{ env.APK_NAME }}"
+          echo "📦 Latest APK: /opt/zumi-mobile/releases/zumi-install.apk"
+          echo "📦 Versioned APK: /opt/zumi-mobile/releases/${{ env.APK_NAME }}"
           echo "🔗 Version: http://51.210.148.226:${API_PORT}/mobile/version.json"
 
       - name: Cleanup build files

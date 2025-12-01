@@ -20,8 +20,16 @@ interface EnvConfig {
     };
 }
 
+// Get config from app.json extra field (works in standalone builds)
+const extra = Constants.expoConfig?.extra || {};
+
 // Helper function to get environment variable with fallback
 const getEnvVar = (key: string, fallback: string = ''): string => {
+    // In standalone builds, use Constants.expoConfig.extra
+    // In development, use process.env
+    if (extra[key]) {
+        return extra[key];
+    }
     return process.env[key] || fallback;
 };
 
@@ -36,12 +44,11 @@ const env: EnvConfig = {
         webClientId: getEnvVar('EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID', ''),
     },
     api: {
-        baseUrl: isDevelopment
-            ? getEnvVar('EXPO_PUBLIC_API_URL', 'http://localhost:3000')
-            : getEnvVar('EXPO_PUBLIC_API_URL_PRODUCTION', 'http://localhost:3000'),
+        // Use the apiUrl from app.json extra field
+        baseUrl: extra.apiUrl || getEnvVar('EXPO_PUBLIC_API_URL', 'https://api.international.phearion.fr/zumi'),
     },
     deepLink: {
-        scheme: getEnvVar('EXPO_PUBLIC_DEEP_LINK_SCHEME', 'exp'),
+        scheme: extra.deepLinkScheme || getEnvVar('EXPO_PUBLIC_DEEP_LINK_SCHEME', 'exp'),
     },
 };
 
@@ -50,25 +57,5 @@ console.log('📱 Environment Configuration Loaded:');
 console.log('  - Backend URL:', env.api.baseUrl);
 console.log('  - Deep Link Scheme:', env.deepLink.scheme);
 console.log('  - Is Development:', isDevelopment);
-
-// Validate required environment variables
-const validateEnv = () => {
-    const missing: string[] = [];
-
-    if (!env.googleAuth.expoClientId) missing.push('EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID');
-    if (!env.api.baseUrl) missing.push('EXPO_PUBLIC_API_URL');
-    if (!env.deepLink.scheme) missing.push('EXPO_PUBLIC_DEEP_LINK_SCHEME');
-
-    if (missing.length > 0) {
-        console.warn(
-            '⚠️  Warning: Missing environment variables:\n' +
-            missing.map(key => `   - ${key}`).join('\n') +
-            '\n\nPlease check your .env file.'
-        );
-    }
-};
-
-// Validate on import
-validateEnv();
 
 export default env;

@@ -92,6 +92,9 @@ const AppNavigator = () => {
     useEffect(() => {
         if (isAuthenticated) {
             checkPinLock();
+        } else {
+            // If not authenticated, no need to check PIN
+            setCheckingPin(false);
         }
     }, [isAuthenticated]);
 

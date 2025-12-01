@@ -7,8 +7,11 @@ class ApiClient {
     private client: AxiosInstance;
 
     constructor() {
+        console.log('🌐 Initializing API Client with baseURL:', env.api.baseUrl);
+
         this.client = axios.create({
             baseURL: env.api.baseUrl,
+            timeout: 15000, // 15 second timeout to prevent hanging forever
             headers: {
                 'Content-Type': 'application/json',
             },
@@ -17,23 +20,37 @@ class ApiClient {
         // Add request interceptor to include auth token
         this.client.interceptors.request.use(
             async (config) => {
+                console.log('📤 API Request:', config.method?.toUpperCase(), config.url);
                 const token = await SecureStore.getItemAsync('serverToken');
                 if (token) {
                     config.headers.Authorization = `Bearer ${token}`;
                 }
                 return config;
             },
-            (error) => Promise.reject(error)
+            (error) => {
+                console.error('❌ Request interceptor error:', error);
+                return Promise.reject(error);
+            }
         );
 
         // Add response interceptor for error handling
         this.client.interceptors.response.use(
-            (response) => response,
+            (response) => {
+                console.log('✅ API Response:', response.config.method?.toUpperCase(), response.config.url, 'Status:', response.status);
+                return response;
+            },
             async (error) => {
-                if (error.response?.status === 401) {
+                if (error.code === 'ECONNABORTED') {
+                    console.error('⏱️ Request timeout - server took too long to respond');
+                } else if (error.code === 'ERR_NETWORK') {
+                    console.error('🌐 Network error - cannot reach server at:', env.api.baseUrl);
+                } else if (error.response?.status === 401) {
+                    console.error('🔒 Unauthorized - clearing tokens');
                     // Handle token expiration - clear tokens and redirect to login
                     await SecureStore.deleteItemAsync('serverToken');
                     await SecureStore.deleteItemAsync('googleToken');
+                } else {
+                    console.error('❌ API Error:', error.message, 'Code:', error.code);
                 }
                 return Promise.reject(error);
             }
@@ -41,13 +58,43 @@ class ApiClient {
     }
 
     async get<T>(endpoint: string): Promise<T> {
-        const response: AxiosResponse<T> = await this.client.get(endpoint);
-        return response.data;
+        try {
+            const response: AxiosResponse<T> = await this.client.get(endpoint);
+            return response.data;
+        } catch (error: any) {
+            console.error('❌ GET request failed:', endpoint, error.message);
+            throw error;
+        }
     }
 
     async post<T>(endpoint: string, data?: unknown): Promise<T> {
-        const response: AxiosResponse<T> = await this.client.post(endpoint, data);
-        return response.data;
+        try {
+            const response: AxiosResponse<T> = await this.client.post(endpoint, data);
+            return response.data;
+        } catch (error: any) {
+            console.error('❌ POST request failed:', endpoint, error.message);
+            throw error;
+        }
+    }
+
+    async put<T>(endpoint: string, data?: unknown): Promise<T> {
+        try {
+            const response: AxiosResponse<T> = await this.client.put(endpoint, data);
+            return response.data;
+        } catch (error: any) {
+            console.error('❌ PUT request failed:', endpoint, error.message);
+            throw error;
+        }
+    }
+
+    async delete<T>(endpoint: string): Promise<T> {
+        try {
+            const response: AxiosResponse<T> = await this.client.delete(endpoint);
+            return response.data;
+        } catch (error: any) {
+            console.error('❌ DELETE request failed:', endpoint, error.message);
+            throw error;
+        }
     }
 
     async authenticateWithGoogle(googleToken: string): Promise<{ user: any; token: string }> {

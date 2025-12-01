@@ -38,8 +38,11 @@
       "expo-secure-store"
     ],
     "extra": {
-      "apiUrl": "http://51.210.148.226:31856",
+      "apiUrl": "https://api.international.phearion.fr/zumi",
       "deepLinkScheme": "zumi",
+      "EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID": "298755969973-nnn4qpsjc28fifmt2ea75o3ppnrua3na.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID": "298755969973-r58meo1o2sagtv42cusicv186rgumd8r.apps.googleusercontent.com",
+      "EXPO_PUBLIC_GOOGLE_EXPO_CLIENT_ID": "298755969973-nnn4qpsjc28fifmt2ea75o3ppnrua3na.apps.googleusercontent.com",
       "eas": {
         "projectId": "5e5bd45b-1df0-4336-b351-f8d7a14f8e7b"
       }
