@@ -94,6 +94,7 @@ const AppNavigator = () => {
     const [isPinLocked, setIsPinLocked] = useState(false);
     const [checkingPin, setCheckingPin] = useState(true);
     const [isReady, setIsReady] = useState(false);
+    const [showMainApp, setShowMainApp] = useState(false);
 
     useEffect(() => {
         if (isAuthenticated) {
@@ -136,7 +137,8 @@ const AppNavigator = () => {
                         setIsPinLocked(true);
                     } else {
                         console.log('ℹ️ No PIN set anywhere');
-                        // No PIN anywhere, start loading
+                        // No PIN anywhere, allow main app to show
+                        setShowMainApp(true);
                         startInitialLoad();
                     }
                 }
@@ -148,6 +150,7 @@ const AppNavigator = () => {
                 setIsPinLocked(hasPin);
 
                 if (!hasPin) {
+                    setShowMainApp(true);
                     startInitialLoad();
                 }
             }
@@ -163,6 +166,7 @@ const AppNavigator = () => {
 
     const handlePinUnlock = () => {
         setIsPinLocked(false);
+        setShowMainApp(true);
         // Start loading AFTER pin is unlocked
         startInitialLoad();
     };
@@ -176,31 +180,33 @@ const AppNavigator = () => {
         );
     }
 
-    // Don't render Navigator until we know what screen to show
-    // This prevents MainTabs from mounting during PIN check
-    let initialScreen;
+    // Show Login screen
     if (!isAuthenticated) {
-        initialScreen = <LoginScreen />;
-    } else if (isPinLocked) {
-        initialScreen = <PinLockScreen onUnlock={handlePinUnlock} />;
-    } else {
-        initialScreen = null; // Will show MainTabs via Stack.Navigator
+        return <LoginScreen />;
+    }
+
+    // Show PIN screen - BLOCK everything else
+    if (isPinLocked) {
+        return <PinLockScreen onUnlock={handlePinUnlock} />;
+    }
+
+    // Only NOW, after PIN is unlocked, mount the main app with Navigator
+    if (!showMainApp) {
+        return (
+            <View style={styles.splashContainer}>
+                {/* Safety check - should never reach here */}
+            </View>
+        );
     }
 
     return (
         <>
-            {initialScreen ? (
-                // Show PIN or Login directly without Stack.Navigator
-                initialScreen
-            ) : (
-                // Only mount Stack.Navigator when going to MainTabs
-                <Stack.Navigator screenOptions={{ headerShown: false }}>
-                    <Stack.Screen name="Main" component={MainTabs} />
-                </Stack.Navigator>
-            )}
+            <Stack.Navigator screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="Main" component={MainTabs} />
+            </Stack.Navigator>
 
             {/* Loading screen overlay - only show AFTER pin check is complete and pin is unlocked */}
-            {isAuthenticated && !isPinLocked && !checkingPin && musicLoading && <AppLoadingScreen />}
+            {musicLoading && <AppLoadingScreen />}
         </>
     );
 };
