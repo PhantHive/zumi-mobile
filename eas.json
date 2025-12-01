@@ -8,12 +8,18 @@
 			"android": {
 				"buildType": "apk",
 				"gradleCommand": ":app:assembleRelease"
+			},
+			"ios": {
+				"buildConfiguration": "Release"
 			}
 		},
 		"development": {
 			"android": {
 				"buildType": "apk",
 				"gradleCommand": ":app:assembleDebug"
+			},
+			"ios": {
+				"buildConfiguration": "Debug"
 			},
 			"developmentClient": true
 		}

@@ -9,6 +9,7 @@
     "web": "expo start --web",
     "build:android": "eas build --platform android --profile production --local",
     "build:android:cloud": "eas build --platform android --profile production",
+    "build:ios:cloud": "eas build --platform ios --profile production",
     "postinstall": "patch-package"
   },
   "dependencies": {

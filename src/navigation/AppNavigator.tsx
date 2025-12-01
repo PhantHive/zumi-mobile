@@ -118,9 +118,12 @@ const AppNavigator = () => {
                     const hasLocalPin = !!storedPin;
 
                     if (hasLocalPin) {
-                        console.log('⚠️ Local PIN found but not on server, syncing...');
-                        // Has local PIN but not on server, could sync it
-                        setIsPinLocked(true);
+                        console.log('⚠️ Local PIN found but not on server - clearing old PIN');
+                        // Clear old numeric PIN (migration from old system)
+                        await SecureStore.deleteItemAsync('userPin');
+                        console.log('✅ Old PIN cleared - user can set new symbol PIN in settings');
+                        // No PIN, start loading
+                        startInitialLoad();
                     } else {
                         console.log('ℹ️ No PIN set anywhere');
                         // No PIN anywhere, start loading
