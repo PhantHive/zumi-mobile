@@ -146,8 +146,10 @@ const AppNavigator = () => {
             console.error('Error checking PIN:', error);
         } finally {
             setCheckingPin(false);
-            // Hide splash screen after PIN check is complete
-            SplashScreen.hideAsync().catch(console.error);
+            // Wait a tiny bit before hiding splash to ensure PIN screen is rendered
+            setTimeout(() => {
+                SplashScreen.hideAsync().catch(console.error);
+            }, 100);
         }
     };
 
