@@ -5,6 +5,7 @@ import { apiClient } from '../services/apiClient';
 import { Song } from '../types';
 import * as SecureStore from 'expo-secure-store';
 import { useAuth } from './AuthContext';
+import { mediaSessionService } from '../services/mediaSessionService';
 
 interface Album {
     id: string;
@@ -49,7 +50,7 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
     const hasInitialLoad = React.useRef(false);
     const { user } = useAuth();
 
-    // Configure audio mode
+    // Configure audio mode and initialize media session
     useEffect(() => {
         Audio.setAudioModeAsync({
             playsInSilentModeIOS: true,
@@ -57,12 +58,42 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
             shouldDuckAndroid: true,
         });
 
+        // Initialize media session service
+        mediaSessionService.initialize().then(() => {
+            // Set up control handlers
+            mediaSessionService.setControls({
+                play: resumeSong,
+                pause: pauseSong,
+                next: nextSong,
+                previous: previousSong,
+                seekTo: seekTo,
+            });
+        });
+
         return () => {
             if (soundRef.current) {
                 soundRef.current.unloadAsync();
             }
+            mediaSessionService.hide();
         };
     }, []);
+
+    // Update media session when playback state changes
+    useEffect(() => {
+        if (currentSong) {
+            mediaSessionService.updateMetadata(
+                {
+                    title: currentSong.title,
+                    artist: currentSong.artist || 'Unknown Artist',
+                    album: currentSong.genre || 'Unknown Album',
+                    artwork: currentSong.thumbnailUrl,
+                },
+                isPlaying,
+                duration,
+                position
+            );
+        }
+    }, [currentSong, isPlaying, duration, position]);
 
     // Manual trigger for initial load - called AFTER pin unlock
     const startInitialLoad = () => {
@@ -187,6 +218,19 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
             soundRef.current = sound;
             setCurrentSong(song);
             setIsPlaying(true);
+
+            // Update media session
+            mediaSessionService.updateMetadata(
+                {
+                    title: song.title,
+                    artist: song.artist || 'Unknown Artist',
+                    album: song.genre || 'Unknown Album',
+                    artwork: song.thumbnailUrl,
+                },
+                true,
+                0,
+                0
+            );
         } catch (error) {
             console.error('Error playing song:', error);
         }
@@ -209,6 +253,7 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
         if (soundRef.current) {
             await soundRef.current.pauseAsync();
             setIsPlaying(false);
+            mediaSessionService.updatePlaybackState(false, position);
         }
     };
 
@@ -216,6 +261,7 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
         if (soundRef.current) {
             await soundRef.current.playAsync();
             setIsPlaying(true);
+            mediaSessionService.updatePlaybackState(true, position);
         }
     };
 

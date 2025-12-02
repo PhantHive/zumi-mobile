@@ -20,6 +20,8 @@ const UpdateCheckScreen: React.FC<UpdateCheckScreenProps> = ({ onComplete }) => 
     }, []);
 
     const checkForUpdatesAndProceed = async () => {
+        const startTime = Date.now();
+
         try {
             // Get current version
             const current = Application.nativeApplicationVersion || '1.0.0';
@@ -35,24 +37,33 @@ const UpdateCheckScreen: React.FC<UpdateCheckScreenProps> = ({ onComplete }) => 
                 setStatus(`Update found: v${updateInfo.version}`);
                 console.log('✅ Update available:', updateInfo.version);
 
-                // Wait a bit to show the update message
-                await new Promise(resolve => setTimeout(resolve, 1500));
+                // Ensure minimum 2 seconds display time
+                const elapsed = Date.now() - startTime;
+                const remainingTime = Math.max(0, 2000 - elapsed);
+                await new Promise(resolve => setTimeout(resolve, remainingTime + 1500));
+
                 onComplete(updateInfo);
             } else {
                 setLatestVersion(current);
                 setStatus('App is up to date');
                 console.log('✅ No updates available');
 
-                // Wait minimum 1 second to show the screen
-                await new Promise(resolve => setTimeout(resolve, 1000));
+                // Ensure minimum 2 seconds display time
+                const elapsed = Date.now() - startTime;
+                const remainingTime = Math.max(0, 2000 - elapsed);
+                await new Promise(resolve => setTimeout(resolve, remainingTime));
+
                 onComplete(null);
             }
         } catch (error) {
             console.error('❌ Update check failed:', error);
             setStatus('Update check failed, continuing...');
 
-            // Still proceed after a brief delay
-            await new Promise(resolve => setTimeout(resolve, 1000));
+            // Ensure minimum 2 seconds display time even on error
+            const elapsed = Date.now() - startTime;
+            const remainingTime = Math.max(0, 2000 - elapsed);
+            await new Promise(resolve => setTimeout(resolve, remainingTime));
+
             onComplete(null);
         }
     };
@@ -134,4 +145,3 @@ const styles = StyleSheet.create({
 });
 
 export default UpdateCheckScreen;
-
