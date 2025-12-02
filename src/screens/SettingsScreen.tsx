@@ -9,23 +9,34 @@ import {
     Switch,
     Alert,
     Image,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
+import * as Application from 'expo-application';
 import { useAuth } from '../contexts';
 import { colors, spacing, typography, borderRadius } from '../styles';
 import PinLockScreen from './PinLockScreen';
 import { apiClient } from '../services/apiClient';
+import { checkForUpdates, downloadAndInstallUpdate } from '../services/updateChecker';
+import UpdateModal from '../components/UpdateModal';
 
 const SettingsScreen: React.FC = () => {
     const { user, signOut } = useAuth();
     const [pinEnabled, setPinEnabled] = useState(false);
     const [isSettingPin, setIsSettingPin] = useState(false);
     const [isLoading, setIsLoading] = useState(true);
+    const [checkingUpdate, setCheckingUpdate] = useState(false);
+    const [updateModalVisible, setUpdateModalVisible] = useState(false);
+    const [updateInfo, setUpdateInfo] = useState<any>(null);
+    const [currentVersion, setCurrentVersion] = useState<string>('1.0.0');
 
     useEffect(() => {
         loadSettings();
+        // Get current version
+        const version = Application.nativeApplicationVersion || '1.0.0';
+        setCurrentVersion(version);
     }, []);
 
     const loadSettings = async () => {
@@ -98,6 +109,36 @@ const SettingsScreen: React.FC = () => {
         }
     };
 
+    const handleCheckForUpdates = async () => {
+        setCheckingUpdate(true);
+        try {
+            console.log('🔍 Manually checking for updates...');
+            const { hasUpdate, updateInfo: info } = await checkForUpdates();
+
+            if (hasUpdate && info) {
+                console.log('✅ Update found:', info.version);
+                setUpdateInfo(info);
+                setUpdateModalVisible(true);
+            } else {
+                console.log('✅ No updates available');
+                Alert.alert(
+                    'No Updates',
+                    `You are running the latest version (v${currentVersion})`,
+                    [{ text: 'OK' }]
+                );
+            }
+        } catch (error) {
+            console.error('❌ Error checking for updates:', error);
+            Alert.alert(
+                'Error',
+                'Failed to check for updates. Please try again later.',
+                [{ text: 'OK' }]
+            );
+        } finally {
+            setCheckingUpdate(false);
+        }
+    };
+
     if (isSettingPin) {
         return (
             <PinLockScreen
@@ -161,6 +202,33 @@ const SettingsScreen: React.FC = () => {
                 </View>
             </View>
 
+            {/* App Section */}
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>App</Text>
+                <View style={styles.card}>
+                    <TouchableOpacity
+                        style={styles.settingRow}
+                        onPress={handleCheckForUpdates}
+                        disabled={checkingUpdate}
+                    >
+                        <View style={styles.settingInfo}>
+                            <Ionicons name="cloud-download-outline" size={24} color={colors.accent} />
+                            <View style={styles.settingText}>
+                                <Text style={styles.settingTitle}>Check for Updates</Text>
+                                <Text style={styles.settingDescription}>
+                                    Current version: v{currentVersion}
+                                </Text>
+                            </View>
+                        </View>
+                        {checkingUpdate ? (
+                            <ActivityIndicator size="small" color={colors.accent} />
+                        ) : (
+                            <Ionicons name="chevron-forward" size={24} color={colors.textSecondary} />
+                        )}
+                    </TouchableOpacity>
+                </View>
+            </View>
+
             {/* Account Section */}
             <View style={styles.section}>
                 <Text style={styles.sectionTitle}>Account</Text>
@@ -178,9 +246,22 @@ const SettingsScreen: React.FC = () => {
             </View>
 
             <View style={styles.footer}>
-                <Text style={styles.footerText}>Zumi Music v1.0.0</Text>
+                <Text style={styles.footerText}>Zumi Music v{currentVersion}</Text>
                 <Text style={styles.footerSubtext}>Made with 💜 for music lovers</Text>
             </View>
+
+            {/* Update Modal */}
+            {updateInfo && (
+                <UpdateModal
+                    visible={updateModalVisible}
+                    updateInfo={updateInfo}
+                    onUpdate={async () => {
+                        setUpdateModalVisible(false);
+                        await downloadAndInstallUpdate(updateInfo.downloadUrl);
+                    }}
+                    onDismiss={() => setUpdateModalVisible(false)}
+                />
+            )}
         </ScrollView>
     );
 };

@@ -14,6 +14,7 @@ import * as SecureStore from 'expo-secure-store';
 import * as Crypto from 'expo-crypto';
 import { colors, spacing, typography } from '../styles/theme';
 import { apiClient } from '../services/apiClient';
+import { UpdateInfo } from '../types/update';
 
 // Symbol options for PIN
 const SYMBOLS = [
@@ -33,6 +34,7 @@ interface PinLockScreenProps {
     onSetPin?: (pin: string) => void;
     isSettingPin?: boolean;
     title?: string;
+    pendingUpdate?: UpdateInfo | null;
 }
 
 const PinLockScreen: React.FC<PinLockScreenProps> = ({
@@ -40,6 +42,7 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({
     onSetPin,
     isSettingPin = false,
     title,
+    pendingUpdate,
 }) => {
     const [pin, setPin] = useState<number[]>([]);
     const [confirmPin, setConfirmPin] = useState<number[]>([]);
@@ -213,6 +216,15 @@ const PinLockScreen: React.FC<PinLockScreenProps> = ({
     return (
         <LinearGradient colors={[colors.primary, colors.secondary]} style={styles.container}>
             <View style={styles.content}>
+                {pendingUpdate && (
+                    <View style={styles.updateBanner}>
+                        <Ionicons name="cloud-download-outline" size={20} color={colors.accent} />
+                        <Text style={styles.updateBannerText}>
+                            Update available: v{pendingUpdate.version}
+                        </Text>
+                    </View>
+                )}
+
                 <View style={styles.header}>
                     <Ionicons name="lock-closed" size={60} color={colors.accent} />
                     <Text style={styles.title}>{getTitle()}</Text>
@@ -322,6 +334,19 @@ const styles = StyleSheet.create({
         color: 'rgba(255, 255, 255, 0.6)',
         marginTop: 4,
         fontWeight: '500',
+    },
+    updateBanner: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)',
+        padding: spacing.sm,
+        borderRadius: 10,
+        marginBottom: spacing.lg,
+    },
+    updateBannerText: {
+        color: colors.accent,
+        marginLeft: spacing.sm,
+        fontSize: 16,
     },
 });
 

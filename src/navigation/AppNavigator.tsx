@@ -9,10 +9,12 @@ import * as SplashScreen from 'expo-splash-screen';
 import { useAuth } from '../contexts/AuthContext';
 import { useMusic } from '../contexts/MusicContext';
 import { apiClient } from '../services/apiClient';
+import { UpdateInfo } from '../types/update';
 
 // Screens
 import LoginScreen from '../screens/LoginScreen';
 import AppLoadingScreen from '../screens/AppLoadingScreen';
+import UpdateCheckScreen from '../screens/UpdateCheckScreen';
 import PinLockScreen from '../screens/PinLockScreen';
 import HomeScreen from '../screens/HomeScreen';
 import LibraryScreen from '../screens/LibraryScreen';
@@ -95,10 +97,13 @@ const AppNavigator = () => {
     const [checkingPin, setCheckingPin] = useState(true);
     const [isReady, setIsReady] = useState(false);
     const [showMainApp, setShowMainApp] = useState(false);
+    const [showUpdateCheck, setShowUpdateCheck] = useState(false);
+    const [pendingUpdate, setPendingUpdate] = useState<UpdateInfo | null>(null);
 
     useEffect(() => {
         if (isAuthenticated) {
-            checkPinLock();
+            // First show update check screen
+            setShowUpdateCheck(true);
         } else {
             setCheckingPin(false);
             setIsReady(true);
@@ -106,6 +111,14 @@ const AppNavigator = () => {
             SplashScreen.hideAsync().catch(console.error);
         }
     }, [isAuthenticated]);
+
+    const handleUpdateCheckComplete = (updateInfo: UpdateInfo | null) => {
+        console.log('✅ Update check complete, update info:', updateInfo);
+        setPendingUpdate(updateInfo);
+        setShowUpdateCheck(false);
+        // Now check PIN
+        checkPinLock();
+    };
 
     const checkPinLock = async () => {
         try {
@@ -171,8 +184,8 @@ const AppNavigator = () => {
         startInitialLoad();
     };
 
-    // Show splash screen while checking auth or PIN
-    if (authLoading || checkingPin || !isReady) {
+    // Show splash screen while checking auth
+    if (authLoading) {
         return (
             <View style={styles.splashContainer}>
                 {/* Native splash screen will show here */}
@@ -185,9 +198,23 @@ const AppNavigator = () => {
         return <LoginScreen />;
     }
 
+    // Show Update Check Screen FIRST (before PIN)
+    if (showUpdateCheck) {
+        return <UpdateCheckScreen onComplete={handleUpdateCheckComplete} />;
+    }
+
+    // Show splash while checking PIN
+    if (checkingPin || !isReady) {
+        return (
+            <View style={styles.splashContainer}>
+                {/* Native splash screen will show here */}
+            </View>
+        );
+    }
+
     // Show PIN screen - BLOCK everything else
     if (isPinLocked) {
-        return <PinLockScreen onUnlock={handlePinUnlock} />;
+        return <PinLockScreen onUnlock={handlePinUnlock} pendingUpdate={pendingUpdate} />;
     }
 
     // Only NOW, after PIN is unlocked, mount the main app with Navigator
