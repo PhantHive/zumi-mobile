@@ -8,6 +8,7 @@ import * as SecureStore from 'expo-secure-store';
 import { useAuth } from './AuthContext';
 import { trackPlayerService } from '../services/trackPlayerService';
 import { PermissionService } from '../services/permissionService';
+import { resizeArtworkForTrackPlayer } from '../utils/imageUtils';
 
 interface Album {
     id: string;
@@ -249,12 +250,17 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             console.log('🎵 Playing:', song.title, 'from', audioUrl);
 
+            // 🖼️ Get and resize artwork to avoid TransactionTooLargeException
             let artworkUrl;
             if (song.thumbnailUrl) {
                 try {
-                    artworkUrl = await apiClient.getThumbnailUrlWithAuth(song.thumbnailUrl);
+                    const originalArtworkUrl = await apiClient.getThumbnailUrlWithAuth(song.thumbnailUrl);
+                    // Resize to 512x512 to stay under Android's 1MB binder limit
+                    artworkUrl = await resizeArtworkForTrackPlayer(originalArtworkUrl);
+                    console.log('✅ Artwork resized for TrackPlayer');
                 } catch (e) {
-                    console.warn('Could not get thumbnail:', e);
+                    console.warn('⚠️ Could not process artwork:', e);
+                    // Continue without artwork rather than failing
                 }
             }
 
@@ -263,7 +269,7 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 title: song.title,
                 artist: song.artist || 'Unknown Artist',
                 album: song.genre || 'Unknown Album',
-                artwork: artworkUrl,
+                artwork: artworkUrl, // Now using resized artwork
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
