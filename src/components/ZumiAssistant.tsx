@@ -14,7 +14,7 @@ import { useMusic } from '../contexts/MusicContext';
 import { colors, spacing, typography, borderRadius } from '../styles/theme';
 import { videos, getRandomVideo } from '../utils/assets';
 
-const INACTIVITY_TIMEOUT = 30000; // 30 seconds
+const INACTIVITY_TIMEOUT = 120000; // 2 minutes
 const GYROSCOPE_THRESHOLD = 0.5; // Sensitivity for gyroscope movement
 
 interface ZumiAssistantProps {

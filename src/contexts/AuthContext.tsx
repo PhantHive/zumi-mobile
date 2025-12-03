@@ -31,6 +31,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [isLoading, setIsLoading] = useState(true);
     const welcomeSoundRef = React.useRef<Audio.Sound | null>(null);
     const isProcessingAuthRef = React.useRef(false);
+    const isSigningInRef = React.useRef(false); // Add this to prevent double sign-in
 
     console.log('🔐 Backend URL:', env.api.baseUrl);
 
@@ -59,12 +60,17 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const handleAuthDeepLink = async (url: string) => {
         console.log('🔗 ========== DEEP LINK HANDLER ==========');
         console.log('🔗 Received deep link:', url);
-        console.log('🔗 URL type:', typeof url);
-        console.log('🔗 URL length:', url?.length);
+
+        // Prevent duplicate processing
+        if (isProcessingAuthRef.current) {
+            console.log('⚠️ Auth already being processed, skipping duplicate');
+            return;
+        }
 
         // Parse the deep link - handle both 'exp://' and 'zumi://' schemes
         if (url && url.includes('auth-success')) {
             try {
+                isProcessingAuthRef.current = true; // Set flag at the start
                 console.log('🎯 Processing auth-success deep link');
 
                 // Extract query parameters from the URL
@@ -75,6 +81,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     queryString = url.split('?')[1];
                 } else {
                     console.error('❌ No query string found in URL');
+                    isProcessingAuthRef.current = false;
+                    isSigningInRef.current = false;
+                    setIsLoading(false);
                     return;
                 }
 
@@ -103,28 +112,31 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
                     console.log('✅ Stored successfully, updating state...');
                     setUser(userData);
+                    isSigningInRef.current = false; // Reset sign-in flag BEFORE setIsLoading
+                    isProcessingAuthRef.current = false; // Reset processing flag BEFORE setIsLoading
                     setIsLoading(false);
                     console.log('✅ User state updated!');
 
+                    // Dismiss the WebBrowser if it's still open
+                    try {
+                        await WebBrowser.dismissBrowser();
+                        console.log('✅ WebBrowser dismissed');
+                    } catch (dismissError) {
+                        console.log('ℹ️ WebBrowser already dismissed or not open');
+                    }
+
                     // Play welcome sound
                     try {
-                        if (isProcessingAuthRef.current) {
-                            console.log('🔊 Auth processing in progress, skipping sound playback');
-                        } else {
-                            isProcessingAuthRef.current = true;
+                        const randomVoice = getRandomVoice();
+                        const { sound } = await Audio.Sound.createAsync(randomVoice);
+                        welcomeSoundRef.current = sound;
 
-                            const randomVoice = getRandomVoice();
-                            const { sound } = await Audio.Sound.createAsync(randomVoice);
-                            welcomeSoundRef.current = sound;
-
-                            await sound.playAsync();
-                            sound.setOnPlaybackStatusUpdate((status) => {
-                                if (status.isLoaded && status.didJustFinish) {
-                                    sound.unloadAsync();
-                                    isProcessingAuthRef.current = false;
-                                }
-                            });
-                        }
+                        await sound.playAsync();
+                        sound.setOnPlaybackStatusUpdate((status) => {
+                            if (status.isLoaded && status.didJustFinish) {
+                                sound.unloadAsync();
+                            }
+                        });
                     } catch (audioError) {
                         console.log('⚠️ Error playing welcome sound:', audioError);
                     }
@@ -132,14 +144,23 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     console.error('❌ Missing token or user data in deep link');
                     console.error('Token:', token ? 'EXISTS' : 'MISSING');
                     console.error('User:', userJson ? 'EXISTS' : 'MISSING');
+                    isProcessingAuthRef.current = false;
+                    isSigningInRef.current = false;
+                    setIsLoading(false);
                 }
             } catch (error: any) {
                 console.error('❌ Error parsing deep link:', error);
                 console.error('❌ Error message:', error.message);
                 console.error('❌ Error stack:', error.stack);
+                isProcessingAuthRef.current = false;
+                isSigningInRef.current = false;
+                setIsLoading(false);
             }
         } else if (url && url.includes('auth-error')) {
             console.log('⚠️ Auth error deep link received');
+            isProcessingAuthRef.current = false;
+            isSigningInRef.current = false;
+            setIsLoading(false);
             try {
                 const queryString = url.split('?')[1] || '';
                 const params = new URLSearchParams(queryString);
@@ -170,8 +191,26 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     const signIn = async () => {
+        // Prevent double sign-in
+        if (isSigningInRef.current) {
+            console.log('⚠️ Sign-in already in progress, ignoring duplicate request');
+            return;
+        }
+
         try {
+            isSigningInRef.current = true;
+            setIsLoading(true);
             console.log('🌐 Opening backend OAuth flow...');
+
+            // Clear any existing browser session first
+            try {
+                console.log('🧹 Clearing browser session...');
+                await WebBrowser.dismissBrowser();
+                // Give it a moment to fully dismiss
+                await new Promise(resolve => setTimeout(resolve, 100));
+            } catch (clearError) {
+                console.log('ℹ️ No existing browser session to clear');
+            }
 
             // Build the redirect URL for Expo Go
             let authRedirectUrl: string;
@@ -200,14 +239,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 console.log('📱 Using custom scheme redirect URL:', authRedirectUrl);
             }
 
-            // Backend expects 'scheme' parameter, not 'redirect'
-            const authUrl = `${env.api.baseUrl}/api/auth/google/mobile?scheme=${encodeURIComponent(authRedirectUrl)}`;
+            // Add a timestamp to prevent caching issues
+            const timestamp = Date.now();
+            const authUrl = `${env.api.baseUrl}/api/auth/google/mobile?scheme=${encodeURIComponent(authRedirectUrl)}&t=${timestamp}`;
             console.log('🔗 Backend auth URL:', authUrl);
 
-            // Open the backend OAuth endpoint in browser
+            // Open the backend OAuth endpoint in browser with proper configuration
             const result = await WebBrowser.openAuthSessionAsync(
                 authUrl,
-                authRedirectUrl
+                authRedirectUrl,
+                {
+                    // Don't show the in-app browser title bar
+                    showInRecents: false,
+                    // Use ephemeral session to prevent caching
+                    createTask: false,
+                }
             );
 
             console.log('✅ AuthSession result:', result);
@@ -215,13 +261,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             if (result.type === 'success' && result.url) {
                 // The auth session completed and returned a URL - handle it
                 console.log('🔗 AuthSession returned with URL:', result.url);
-                handleAuthDeepLink(result.url);
+                await handleAuthDeepLink(result.url);
+            } else if (result.type === 'cancel') {
+                console.log('⚠️ User cancelled the auth flow');
+                isSigningInRef.current = false;
+                setIsLoading(false);
+            } else if (result.type === 'dismiss') {
+                console.log('⚠️ Auth session was dismissed');
+                isSigningInRef.current = false;
+                setIsLoading(false);
             }
         } catch (error) {
             console.error('❌ Sign in error:', error);
-            throw error;
-        } finally {
+            isSigningInRef.current = false;
             setIsLoading(false);
+            throw error;
         }
     };
 

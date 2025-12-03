@@ -1,11 +1,13 @@
 // src/contexts/MusicContext.tsx
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Audio } from 'expo-av';
+import TrackPlayer, { State, Event } from 'react-native-track-player';
+import { Alert, Linking } from 'react-native';
 import { apiClient } from '../services/apiClient';
 import { Song } from '../types';
 import * as SecureStore from 'expo-secure-store';
 import { useAuth } from './AuthContext';
-import { mediaSessionService } from '../services/mediaSessionService';
+import { trackPlayerService } from '../services/trackPlayerService';
+import { PermissionService } from '../services/permissionService';
 
 interface Album {
     id: string;
@@ -22,7 +24,7 @@ interface MusicContextType {
     position: number;
     duration: number;
     refreshSongs: () => Promise<void>;
-    startInitialLoad: () => void; // NEW: Manual trigger for initial load
+    startInitialLoad: () => void;
     playSong: (song: Song) => void;
     pauseSong: () => void;
     resumeSong: () => void;
@@ -34,68 +36,92 @@ interface MusicContextType {
 
 const MusicContext = createContext<MusicContextType | undefined>(undefined);
 
-interface MusicProviderProps {
-    children: ReactNode;
-}
-
-export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
+export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [albums, setAlbums] = useState<Album[]>([]);
     const [currentSong, setCurrentSong] = useState<Song | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [isLoading, setIsLoading] = useState(false); // Start as false
+    const [isLoading, setIsLoading] = useState(false);
     const [loadingProgress, setLoadingProgress] = useState(0);
     const [position, setPosition] = useState(0);
     const [duration, setDuration] = useState(0);
-    const soundRef = React.useRef<Audio.Sound | null>(null);
     const hasInitialLoad = React.useRef(false);
+    const positionInterval = React.useRef<NodeJS.Timeout | null>(null);
+    const trackPlayerInitialized = React.useRef(false);
     const { user } = useAuth();
 
-    // Configure audio mode and initialize media session
     useEffect(() => {
-        Audio.setAudioModeAsync({
-            playsInSilentModeIOS: true,
-            staysActiveInBackground: true,
-            shouldDuckAndroid: true,
+        let mounted = true;
+
+        const setupTrackPlayer = async () => {
+            try {
+                console.log('🔔 Requesting notification permissions...');
+                const permissionGranted = await PermissionService.requestNotificationPermissions();
+
+                if (!permissionGranted) {
+                    console.warn('⚠️ Notification permission DENIED - TrackPlayer will NOT be initialized');
+                    console.warn('⚠️ Music will still play but no lock screen controls');
+                    // ❌ NE PAS INITIALISER si pas de permissions!
+                    return;
+                }
+
+                console.log('🎵 Permissions granted, initializing TrackPlayer...');
+                await trackPlayerService.initialize();
+                trackPlayerInitialized.current = true;
+                console.log('✅ TrackPlayer ready with lock screen controls!');
+            } catch (error) {
+                console.error('❌ Failed to initialize TrackPlayer:', error);
+            }
+        };
+
+        if (!trackPlayerInitialized.current) {
+            setupTrackPlayer();
+        }
+
+        const stateListener = TrackPlayer.addEventListener(Event.PlaybackState, async ({ state }) => {
+            if (!mounted) return;
+            setIsPlaying(state === State.Playing || state === State.Buffering);
         });
 
-        // Initialize media session service
-        mediaSessionService.initialize().then(() => {
-            // Set up control handlers
-            mediaSessionService.setControls({
-                play: resumeSong,
-                pause: pauseSong,
-                next: nextSong,
-                previous: previousSong,
-                seekTo: seekTo,
-            });
+        const trackEndListener = TrackPlayer.addEventListener(Event.PlaybackTrackChanged, async () => {
+            if (!mounted) return;
+            nextSong();
         });
 
         return () => {
-            if (soundRef.current) {
-                soundRef.current.unloadAsync();
+            mounted = false;
+            stateListener.remove();
+            trackEndListener.remove();
+            if (positionInterval.current) {
+                clearInterval(positionInterval.current);
             }
-            mediaSessionService.hide();
         };
     }, []);
 
-    // Update media session when playback state changes
     useEffect(() => {
-        if (currentSong) {
-            mediaSessionService.updateMetadata(
-                {
-                    title: currentSong.title,
-                    artist: currentSong.artist || 'Unknown Artist',
-                    album: currentSong.genre || 'Unknown Album',
-                    artwork: currentSong.thumbnailUrl,
-                },
-                isPlaying,
-                duration,
-                position
-            );
+        if (isPlaying) {
+            positionInterval.current = setInterval(async () => {
+                try {
+                    const pos = await trackPlayerService.getPosition();
+                    const dur = await trackPlayerService.getDuration();
+                    setPosition(pos * 1000);
+                    setDuration(dur * 1000);
+                } catch (error) {
+                    // Ignore
+                }
+            }, 1000);
+        } else {
+            if (positionInterval.current) {
+                clearInterval(positionInterval.current);
+            }
         }
-    }, [currentSong, isPlaying, duration, position]);
 
-    // Manual trigger for initial load - called AFTER pin unlock
+        return () => {
+            if (positionInterval.current) {
+                clearInterval(positionInterval.current);
+            }
+        };
+    }, [isPlaying]);
+
     const startInitialLoad = () => {
         if (user && !hasInitialLoad.current) {
             refreshSongs();
@@ -103,7 +129,6 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
     };
 
     const refreshSongs = async () => {
-        // Don't show loading if we already have data (for pull-to-refresh)
         const shouldShowLoading = albums.length === 0;
 
         try {
@@ -112,11 +137,9 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
                 setLoadingProgress(0);
             }
 
-            // Step 1: Fetch songs metadata
             const response = await apiClient.getSongs();
             if (shouldShowLoading) setLoadingProgress(20);
 
-            // Filter songs based on visibility
             const filteredSongs = response.data.filter((song: Song) => {
                 if (song.visibility === 'public' || !song.visibility) {
                     return true;
@@ -127,7 +150,6 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
                 return true;
             });
 
-            // Group songs by genre
             const genreMap = new Map<string, Song[]>();
             filteredSongs.forEach((song: Song) => {
                 const genre = song.genre || 'Unknown Genre';
@@ -147,7 +169,6 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
             setAlbums(albumsArray);
             if (shouldShowLoading) setLoadingProgress(40);
 
-            // Step 2: Preload thumbnails and colors ONLY on initial load
             if (shouldShowLoading && !hasInitialLoad.current) {
                 const allSongs = filteredSongs;
                 const totalSongs = allSongs.length;
@@ -191,77 +212,90 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
 
     const playSong = async (song: Song) => {
         try {
-            // Unload previous sound
-            if (soundRef.current) {
-                await soundRef.current.unloadAsync();
-                soundRef.current = null;
+            // ✅ VÉRIFIER LES PERMISSIONS AVANT DE JOUER
+            if (!trackPlayerInitialized.current) {
+                console.warn('⚠️ TrackPlayer not initialized - requesting permissions');
+                const granted = await PermissionService.requestNotificationPermissions();
+
+                if (!granted) {
+                    Alert.alert(
+                        '🔔 Permissions Required',
+                        'To show music controls on your lock screen, please enable notification permissions in Settings.\n\nYou can still play music without them.',
+                        [
+                            {
+                                text: 'Play Without Controls',
+                                style: 'cancel',
+                                onPress: async () => {
+                                    // Jouer quand même mais sans controls
+                                    console.log('⚠️ Playing without lock screen controls');
+                                    // La musique jouera via expo-av si nécessaire
+                                }
+                            },
+                            {
+                                text: 'Open Settings',
+                                onPress: () => Linking.openSettings()
+                            }
+                        ]
+                    );
+                    return;
+                }
+
+                await trackPlayerService.initialize();
+                trackPlayerInitialized.current = true;
             }
 
-            // Get authenticated stream URL
             const token = await SecureStore.getItemAsync('serverToken');
             const audioUrl = apiClient.getStreamUrl(song.id);
 
-            console.log('Playing:', song.title, 'from', audioUrl);
+            console.log('🎵 Playing:', song.title, 'from', audioUrl);
 
-            // Create and play new sound with auth headers
-            const { sound } = await Audio.Sound.createAsync(
-                {
-                    uri: audioUrl,
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                },
-                { shouldPlay: true },
-                onPlaybackStatusUpdate
-            );
+            let artworkUrl;
+            if (song.thumbnailUrl) {
+                try {
+                    artworkUrl = await apiClient.getThumbnailUrlWithAuth(song.thumbnailUrl);
+                } catch (e) {
+                    console.warn('Could not get thumbnail:', e);
+                }
+            }
 
-            soundRef.current = sound;
+            const track = {
+                url: audioUrl,
+                title: song.title,
+                artist: song.artist || 'Unknown Artist',
+                album: song.genre || 'Unknown Album',
+                artwork: artworkUrl,
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            };
+
+            await trackPlayerService.addAndPlay(track);
             setCurrentSong(song);
             setIsPlaying(true);
 
-            // Update media session
-            mediaSessionService.updateMetadata(
-                {
-                    title: song.title,
-                    artist: song.artist || 'Unknown Artist',
-                    album: song.genre || 'Unknown Album',
-                    artwork: song.thumbnailUrl,
-                },
-                true,
-                0,
-                0
-            );
+            const state = await trackPlayerService.getState();
+            setIsPlaying(state === State.Playing || state === State.Buffering);
         } catch (error) {
-            console.error('Error playing song:', error);
-        }
-    };
-
-    const onPlaybackStatusUpdate = (status: any) => {
-        if (status.isLoaded) {
-            setIsPlaying(status.isPlaying);
-            setPosition(status.positionMillis);
-            setDuration(status.durationMillis);
-
-            // Auto-play next song when current one finishes
-            if (status.didJustFinish) {
-                nextSong();
-            }
+            console.error('❌ Error playing song:', error);
+            Alert.alert('Playback Error', 'Failed to play song. Please try again.');
         }
     };
 
     const pauseSong = async () => {
-        if (soundRef.current) {
-            await soundRef.current.pauseAsync();
+        try {
+            await trackPlayerService.pause();
             setIsPlaying(false);
-            mediaSessionService.updatePlaybackState(false, position);
+        } catch (error) {
+            console.error('Error pausing:', error);
         }
     };
 
     const resumeSong = async () => {
-        if (soundRef.current) {
-            await soundRef.current.playAsync();
+        try {
+            await trackPlayerService.play();
             setIsPlaying(true);
-            mediaSessionService.updatePlaybackState(true, position);
+        } catch (error) {
+            console.error('Error resuming:', error);
         }
     };
 
@@ -274,7 +308,6 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
         if (currentIndex < allSongs.length - 1) {
             playSong(allSongs[currentIndex + 1]);
         } else {
-            // Loop back to first song
             playSong(allSongs[0]);
         }
     };
@@ -299,12 +332,10 @@ export const MusicProvider: React.FC<MusicProviderProps> = ({ children }) => {
     };
 
     const seekTo = async (positionMillis: number) => {
-        if (soundRef.current) {
-            try {
-                await soundRef.current.setPositionAsync(positionMillis);
-            } catch (error) {
-                console.error('Error seeking:', error);
-            }
+        try {
+            await trackPlayerService.seekTo(positionMillis / 1000);
+        } catch (error) {
+            console.error('Error seeking:', error);
         }
     };
 
