@@ -10,20 +10,33 @@ import * as FileSystem from 'expo-file-system';
  */
 export async function resizeArtworkForTrackPlayer(imageUri: string): Promise<string | undefined> {
     try {
-        console.log('🖼️ Resizing artwork:', imageUri);
+        console.log('🖼️ Resizing artwork...');
 
-        // Download the image first if it's a remote URL
         let localUri = imageUri;
-        if (imageUri.startsWith('http://') || imageUri.startsWith('https://')) {
-            const filename = imageUri.split('/').pop() || 'temp.jpg';
-            // @ts-ignore - documentDirectory exists at runtime
-            const fileUri = `${FileSystem.documentDirectory}${filename}`;
 
-            console.log('📥 Downloading image to:', fileUri);
-            // @ts-ignore - downloadAsync exists at runtime
-            const downloadResult = await FileSystem.downloadAsync(imageUri, fileUri);
-            localUri = downloadResult.uri;
+        // If it's a remote URL (http/https), download it first
+        if (imageUri.startsWith('http://') || imageUri.startsWith('https://')) {
+            try {
+                const timestamp = Date.now();
+                const filename = `artwork_${timestamp}.jpg`;
+                // @ts-ignore - documentDirectory exists at runtime
+                const fileUri = `${FileSystem.documentDirectory}${filename}`;
+
+                console.log('📥 Downloading image...');
+                // @ts-ignore - downloadAsync exists at runtime
+                const downloadResult = await FileSystem.downloadAsync(imageUri, fileUri);
+                localUri = downloadResult.uri;
+                console.log('✅ Image downloaded to:', localUri);
+            } catch (downloadError) {
+                console.error('❌ Error downloading image:', downloadError);
+                // If download fails, try to use the original URI directly
+                localUri = imageUri;
+            }
         }
+        // If it's a data URI (base64), we can use it directly with image-manipulator
+        // expo-image-manipulator supports data URIs directly
+
+        console.log('🔄 Resizing image...');
 
         // Resize the image to 512x512 (max dimension)
         const manipResult = await ImageManipulator.manipulateAsync(
@@ -35,10 +48,11 @@ export async function resizeArtworkForTrackPlayer(imageUri: string): Promise<str
             }
         );
 
-        console.log('✅ Resized artwork:', manipResult.uri);
+        console.log('✅ Artwork resized successfully:', manipResult.uri.substring(0, 100) + '...');
         return manipResult.uri;
     } catch (error) {
         console.error('❌ Error resizing artwork:', error);
+        // Return undefined so the track plays without artwork rather than crashing
         return undefined;
     }
 }

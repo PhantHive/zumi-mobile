@@ -227,9 +227,7 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                                 text: 'Play Without Controls',
                                 style: 'cancel',
                                 onPress: async () => {
-                                    // Jouer quand même mais sans controls
                                     console.log('⚠️ Playing without lock screen controls');
-                                    // La musique jouera via expo-av si nécessaire
                                 }
                             },
                             {
@@ -250,14 +248,24 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             console.log('🎵 Playing:', song.title, 'from', audioUrl);
 
-            // 🖼️ Get and resize artwork to avoid TransactionTooLargeException
+            // 🖼️ Get artwork but skip data URIs (too large for Android binder)
             let artworkUrl;
             if (song.thumbnailUrl) {
                 try {
                     const originalArtworkUrl = await apiClient.getThumbnailUrlWithAuth(song.thumbnailUrl);
-                    // Resize to 512x512 to stay under Android's 1MB binder limit
-                    artworkUrl = await resizeArtworkForTrackPlayer(originalArtworkUrl);
-                    console.log('✅ Artwork resized for TrackPlayer');
+
+                    // Skip ALL data URIs (base64 encoded images in any format: jpg, png, webp, etc.)
+                    // They're too large for Android's binder transaction limit (~1MB)
+                    if (originalArtworkUrl && originalArtworkUrl.startsWith('data:')) {
+                        console.warn('⚠️ Skipping data URI artwork (too large for Android binder).');
+                        console.warn('💡 Server should return HTTP URL instead of base64 for TrackPlayer compatibility');
+                        // Skip artwork to avoid TransactionTooLargeException
+                        artworkUrl = undefined;
+                    } else if (originalArtworkUrl) {
+                        // For HTTP/HTTPS URLs, resize to stay under Android's 1MB binder limit
+                        artworkUrl = await resizeArtworkForTrackPlayer(originalArtworkUrl);
+                        console.log('✅ Artwork processed for TrackPlayer');
+                    }
                 } catch (e) {
                     console.warn('⚠️ Could not process artwork:', e);
                     // Continue without artwork rather than failing
@@ -269,7 +277,7 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 title: song.title,
                 artist: song.artist || 'Unknown Artist',
                 album: song.genre || 'Unknown Album',
-                artwork: artworkUrl, // Now using resized artwork
+                artwork: artworkUrl, // May be undefined if skipped
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
