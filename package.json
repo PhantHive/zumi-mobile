@@ -12,7 +12,8 @@
     "build:android:cloud": "eas build --platform android --profile production",
     "build:ios:cloud": "eas build --platform ios --profile production",
     "postinstall": "patch-package",
-    "postprebuild": "node scripts/copy-splash.js"
+    "postprebuild": "node scripts/copy-splash.js",
+	  "install:remote": "adb install -r android/app/build/outputs/apk/release/app-release.apk"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.3",

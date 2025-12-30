@@ -2,6 +2,7 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import env from '../config/env';
+import { YouTubeSearchResult, YouTubeDownloadResult } from '../types/youtube';
 
 class ApiClient {
     private client: AxiosInstance;
@@ -63,6 +64,14 @@ class ApiClient {
             return response.data;
         } catch (error: any) {
             console.error('❌ GET request failed:', endpoint, error.message);
+            if (error.response) {
+                try {
+                    console.error('>>> GET response status:', error.response.status);
+                    console.error('>>> GET response data:', JSON.stringify(error.response.data));
+                } catch (e) {
+                    console.error('>>> Failed to stringify error.response.data', e);
+                }
+            }
             throw error;
         }
     }
@@ -73,6 +82,14 @@ class ApiClient {
             return response.data;
         } catch (error: any) {
             console.error('❌ POST request failed:', endpoint, error.message);
+            if (error.response) {
+                try {
+                    console.error('>>> POST response status:', error.response.status);
+                    console.error('>>> POST response data:', JSON.stringify(error.response.data));
+                } catch (e) {
+                    console.error('>>> Failed to stringify error.response.data', e);
+                }
+            }
             throw error;
         }
     }
@@ -106,6 +123,43 @@ class ApiClient {
 
     async getSongs(): Promise<{ data: any[] }> {
         return this.get('/api/songs');
+    }
+
+    // YouTube integration
+    async searchYouTube(query: string): Promise<{ data: YouTubeSearchResult[] }> {
+        // Backend expects POST /api/youtube/search with JSON body { query }
+        try {
+            console.log('🔎 YouTube search (POST) with query:', query);
+            const response = await this.post('/api/youtube/search', { query });
+            return response as { data: YouTubeSearchResult[] };
+        } catch (err: any) {
+            console.error('YouTube search POST failed:', err?.message || err);
+            throw err;
+        }
+    }
+
+    async downloadFromYouTube(videoId: string): Promise<YouTubeDownloadResult> {
+        console.log('⬇️ YouTube download request for videoId:', videoId);
+        const attempts = ['/api/youtube/download', '/youtube/download', '/api/v1/youtube/download'];
+        let lastError: any = null;
+        for (const endpoint of attempts) {
+            try {
+                console.log('⬇️ Trying download endpoint:', endpoint);
+                const res = await this.post(endpoint, { videoId });
+                return res as YouTubeDownloadResult;
+            } catch (err: any) {
+                lastError = err;
+                const status = err?.response?.status;
+                console.warn('YouTube download attempt failed for', endpoint, 'status:', status || err.message);
+                if (status && status !== 404) break;
+            }
+        }
+        console.error('YouTube download failed for all tried endpoints');
+        throw lastError || new Error('YouTube download failed');
+    }
+
+    getBaseUrl(): string {
+        return this.client.defaults.baseURL || '';
     }
 
     async getMyUploads(): Promise<{ data: any[] }> {

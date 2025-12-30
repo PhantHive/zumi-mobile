@@ -63,3 +63,5 @@ export interface UserPreferences {
 
 // Re-export update types for convenience
 export * from './update';
+// Re-export YouTube types
+export * from './youtube';

@@ -20,6 +20,7 @@ import HomeScreen from '../screens/HomeScreen';
 import LibraryScreen from '../screens/LibraryScreen';
 import UploadScreen from '../screens/UploadScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import YouTubeSearchScreen from '../screens/YouTubeSearchScreen';
 import { colors } from '../styles/theme';
 
 const Stack = createStackNavigator();
@@ -36,6 +37,8 @@ const MainTabs = () => {
                         iconName = focused ? 'home' : 'home-outline';
                     } else if (route.name === 'Library') {
                         iconName = focused ? 'library' : 'library-outline';
+                    } else if (route.name === 'YouTube') {
+                        iconName = focused ? 'logo-youtube' : 'logo-youtube';
                     } else if (route.name === 'Upload') {
                         iconName = focused ? 'cloud-upload' : 'cloud-upload-outline';
                     } else if (route.name === 'Settings') {
@@ -74,6 +77,11 @@ const MainTabs = () => {
             <Tab.Screen
                 name="Library"
                 component={LibraryScreen}
+                options={{ headerShown: false }}
+            />
+            <Tab.Screen
+                name="YouTube"
+                component={YouTubeSearchScreen}
                 options={{ headerShown: false }}
             />
             <Tab.Screen
