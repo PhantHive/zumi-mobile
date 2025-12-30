@@ -55,22 +55,21 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         const setupTrackPlayer = async () => {
             try {
-                console.log('🔔 Requesting notification permissions...');
+                console.log('Requesting notification permissions...');
                 const permissionGranted = await PermissionService.requestNotificationPermissions();
 
                 if (!permissionGranted) {
-                    console.warn('⚠️ Notification permission DENIED - TrackPlayer will NOT be initialized');
-                    console.warn('⚠️ Music will still play but no lock screen controls');
-                    // ❌ NE PAS INITIALISER si pas de permissions!
+                    console.warn('Notification permission DENIED - TrackPlayer will NOT be initialized');
+                    console.warn('Music will still play but no lock screen controls');
                     return;
                 }
 
-                console.log('🎵 Permissions granted, initializing TrackPlayer...');
+                console.log('Permissions granted, initializing TrackPlayer...');
                 await trackPlayerService.initialize();
                 trackPlayerInitialized.current = true;
-                console.log('✅ TrackPlayer ready with lock screen controls!');
+                console.log('TrackPlayer ready with lock screen controls!');
             } catch (error) {
-                console.error('❌ Failed to initialize TrackPlayer:', error);
+                console.error('Failed to initialize TrackPlayer:', error);
             }
         };
 
@@ -166,7 +165,7 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 songs,
             }));
 
-            console.log('📊 Songs grouped by genre:', albumsArray.map(a => `${a.name} (${a.songs.length} songs)`));
+            console.log('Songs grouped by genre:', albumsArray.map(a => `${a.name} (${a.songs.length} songs)`));
             setAlbums(albumsArray);
             if (shouldShowLoading) setLoadingProgress(40);
 
@@ -195,7 +194,7 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
                 await Promise.all(preloadPromises);
                 setLoadingProgress(100);
-                console.log('✅ All resources loaded!');
+                console.log('All resources loaded!');
                 hasInitialLoad.current = true;
             }
 
@@ -213,21 +212,24 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
     const playSong = async (song: Song) => {
         try {
-            // ✅ VÉRIFIER LES PERMISSIONS AVANT DE JOUER
+            console.log('============ PLAY SONG START ============');
+            console.log('Song:', song.title, 'ID:', song.id);
+
+            // Check permissions
             if (!trackPlayerInitialized.current) {
-                console.warn('⚠️ TrackPlayer not initialized - requesting permissions');
+                console.warn('TrackPlayer not initialized - requesting permissions');
                 const granted = await PermissionService.requestNotificationPermissions();
 
                 if (!granted) {
                     Alert.alert(
-                        '🔔 Permissions Required',
+                        'Permissions Required',
                         'To show music controls on your lock screen, please enable notification permissions in Settings.\n\nYou can still play music without them.',
                         [
                             {
                                 text: 'Play Without Controls',
                                 style: 'cancel',
                                 onPress: async () => {
-                                    console.log('⚠️ Playing without lock screen controls');
+                                    console.log('Playing without lock screen controls');
                                 }
                             },
                             {
@@ -245,43 +247,58 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             const token = await SecureStore.getItemAsync('serverToken');
             const audioUrl = apiClient.getStreamUrl(song.id);
+            console.log('Audio URL:', audioUrl);
 
-            console.log('🎵 Playing:', song.title, 'from', audioUrl);
-
-            // 🖼️ Get artwork but skip data URIs (too large for Android binder)
+            // Process artwork with detailed logging
             let artworkUrl;
             if (song.thumbnailUrl) {
                 try {
+                    console.log('Step 1: Getting thumbnail URL...');
                     const originalArtworkUrl = await apiClient.getThumbnailUrlWithAuth(song.thumbnailUrl);
+                    console.log('Step 2: Got original artwork, type:', originalArtworkUrl?.substring(0, 50));
 
-                    // Skip ALL data URIs (base64 encoded images in any format: jpg, png, webp, etc.)
-                    // They're too large for Android's binder transaction limit (~1MB)
-                    if (originalArtworkUrl && originalArtworkUrl.startsWith('data:')) {
-                        console.warn('⚠️ Skipping data URI artwork (too large for Android binder).');
-                        console.warn('💡 Server should return HTTP URL instead of base64 for TrackPlayer compatibility');
-                        // Skip artwork to avoid TransactionTooLargeException
-                        artworkUrl = undefined;
-                    } else if (originalArtworkUrl) {
-                        // For HTTP/HTTPS URLs, resize to stay under Android's 1MB binder limit
-                        artworkUrl = await resizeArtworkForTrackPlayer(originalArtworkUrl);
-                        console.log('✅ Artwork processed for TrackPlayer');
+                    if (originalArtworkUrl) {
+                        console.log('Step 3: Resizing artwork...');
+                        const resizedUrl = await resizeArtworkForTrackPlayer(originalArtworkUrl);
+                        console.log('Step 4: Resize complete:', resizedUrl?.substring(0, 100));
+
+                        if (resizedUrl) {
+                            artworkUrl = resizedUrl;
+                            console.log('SUCCESS: Using resized artwork');
+                        } else {
+                            console.warn('WARNING: Resize returned null, using original');
+                            artworkUrl = originalArtworkUrl;
+                        }
+                    } else {
+                        console.warn('WARNING: No original artwork URL returned');
                     }
                 } catch (e) {
-                    console.warn('⚠️ Could not process artwork:', e);
-                    // Continue without artwork rather than failing
+                    console.error('ERROR processing artwork:', e);
+                    // Continue without artwork
                 }
+            } else {
+                console.log('INFO: No thumbnail URL for this song');
             }
 
+            console.log('Final artwork URL:', artworkUrl ? 'SET' : 'NONE');
+
             const track = {
+                id: song.id,
                 url: audioUrl,
                 title: song.title,
                 artist: song.artist || 'Unknown Artist',
                 album: song.genre || 'Unknown Album',
-                artwork: artworkUrl, // May be undefined if skipped
+                artwork: artworkUrl,
                 headers: {
                     'Authorization': `Bearer ${token}`
                 }
             };
+
+            console.log('Track prepared:', {
+                id: track.id,
+                title: track.title,
+                hasArtwork: !!track.artwork
+            });
 
             await trackPlayerService.addAndPlay(track);
             setCurrentSong(song);
@@ -289,8 +306,10 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
             const state = await trackPlayerService.getState();
             setIsPlaying(state === State.Playing || state === State.Buffering);
+
+            console.log('============ PLAY SONG END ============');
         } catch (error) {
-            console.error('❌ Error playing song:', error);
+            console.error('Error playing song:', error);
             Alert.alert('Playback Error', 'Failed to play song. Please try again.');
         }
     };
