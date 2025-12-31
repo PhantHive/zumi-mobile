@@ -7,6 +7,9 @@ import {
     TouchableOpacity,
     Animated,
     PanResponder,
+    Modal,
+    FlatList,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMusic } from '../contexts/MusicContext';
@@ -16,6 +19,7 @@ import { images } from '../utils/assets';
 import { extractColorsFromImage, hexToRgba } from '../utils/colorExtractor';
 import type { ExtractedColors } from '../utils/colorExtractor';
 import ImageWithLoader from './ImageWithLoader';
+import { getAvailableOutputs, selectOutput, AudioOutput } from '../services/audioRoutingService';
 
 const MiniPlayer: React.FC = () => {
     const {
@@ -34,7 +38,17 @@ const MiniPlayer: React.FC = () => {
     const [dynamicColors, setDynamicColors] = useState<ExtractedColors | null>(null);
     const [isDragging, setIsDragging] = useState(false);
     const [dragPosition, setDragPosition] = useState(0);
+    const [routingModalVisible, setRoutingModalVisible] = useState(false);
+    const [outputs, setOutputs] = useState<AudioOutput[]>([]);
+    const [outputsLoading, setOutputsLoading] = useState(false);
+    const [selectedOutput, setSelectedOutput] = useState<string>('system');
+    const [selectingOutput, setSelectingOutput] = useState(false);
     const dragPositionRef = useRef(0);
+
+    // Animated soundbar state
+    const barAnim1 = useRef(new Animated.Value(0.3)).current;
+    const barAnim2 = useRef(new Animated.Value(0.5)).current;
+    const barAnim3 = useRef(new Animated.Value(0.4)).current;
 
     const colorFadeAnim = useRef(new Animated.Value(1)).current;
     const progressHandleScale = useRef(new Animated.Value(0)).current;
@@ -92,6 +106,13 @@ const MiniPlayer: React.FC = () => {
     useEffect(() => {
         durationRef.current = duration || 0;
     }, [duration]);
+
+    // start/stop soundbar animation when playback changes
+    useEffect(() => {
+        if (isPlaying) startBarAnimation();
+        else stopBarAnimation();
+        return () => stopBarAnimation();
+    }, [isPlaying]);
 
     // Pan responder for dragging the progress bar
     const panResponder = useRef(
@@ -168,6 +189,33 @@ const MiniPlayer: React.FC = () => {
             pauseSong();
         } else {
             resumeSong();
+        }
+    };
+
+    const openRouting = async () => {
+        setRoutingModalVisible(true);
+        setOutputsLoading(true);
+        try {
+            const list = await getAvailableOutputs();
+            setOutputs(list);
+        } catch (err) {
+            console.warn('Failed to get outputs', err);
+            setOutputs([]);
+        } finally {
+            setOutputsLoading(false);
+        }
+    };
+
+    const handleSelectOutput = async (output: AudioOutput) => {
+        setSelectingOutput(true);
+        try {
+            await selectOutput(output.id);
+            setSelectedOutput(output.id);
+            setRoutingModalVisible(false);
+        } catch (err) {
+            console.warn('select output failed', err);
+        } finally {
+            setSelectingOutput(false);
         }
     };
 
@@ -293,6 +341,16 @@ const MiniPlayer: React.FC = () => {
                 </View>
 
                 <View style={styles.controls}>
+                    {/* Soundbar / Output Button */}
+                    <TouchableOpacity onPress={openRouting} style={styles.routingButton}>
+                        {/* Animated soundbar icon */}
+                        <View style={styles.soundbarContainer}>
+                            <Animated.View style={[styles.bar, { transform: [{ scaleY: barAnim1 }] }]} />
+                            <Animated.View style={[styles.bar, { transform: [{ scaleY: barAnim2 }], marginHorizontal: 3 }]} />
+                            <Animated.View style={[styles.bar, { transform: [{ scaleY: barAnim3 }] }]} />
+                        </View>
+                    </TouchableOpacity>
+
                     <TouchableOpacity onPress={previousSong} style={styles.controlButton}>
                         <Ionicons name="play-skip-back" size={20} color={colors.text} />
                     </TouchableOpacity>
@@ -313,6 +371,33 @@ const MiniPlayer: React.FC = () => {
                     </TouchableOpacity>
                 </View>
             </View>
+
+            {/* Routing Modal */}
+            <Modal visible={routingModalVisible} animationType="slide" transparent>
+                <View style={styles.modalOverlay}>
+                    <View style={styles.modalContent}>
+                        <Text style={styles.modalTitle}>Play To</Text>
+                        {outputsLoading ? (
+                            <ActivityIndicator />
+                        ) : (
+                            <FlatList
+                                data={outputs}
+                                keyExtractor={(item) => item.id}
+                                renderItem={({ item }) => (
+                                    <TouchableOpacity style={styles.outputRow} onPress={() => handleSelectOutput(item)} disabled={selectingOutput}>
+                                        <Text style={styles.outputName}>{item.name}</Text>
+                                        {selectedOutput === item.id && <Text style={styles.outputSelected}>(selected)</Text>}
+                                    </TouchableOpacity>
+                                )}
+                            />
+                        )}
+
+                        <TouchableOpacity style={styles.modalClose} onPress={() => setRoutingModalVisible(false)}>
+                            <Text style={{ color: colors.accent }}>Close</Text>
+                        </TouchableOpacity>
+                    </View>
+                </View>
+            </Modal>
         </Animated.View>
     );
 };
@@ -451,25 +536,58 @@ const styles = StyleSheet.create({
     controls: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: spacing.sm,
+        paddingHorizontal: spacing.lg,
+        paddingTop: 18,
     },
-    controlButton: {
-        padding: 6,
-        opacity: 0.8,
-    },
-    playButton: {
-        backgroundColor: colors.accent,
-        width: 44,
-        height: 44,
-        borderRadius: 22,
+    routingButton: {
+        paddingRight: spacing.md,
         justifyContent: 'center',
         alignItems: 'center',
-        shadowColor: colors.accent,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.5,
-        shadowRadius: 8,
-        elevation: 6,
     },
+    soundbarContainer: {
+        width: 22,
+        height: 18,
+        flexDirection: 'row',
+        alignItems: 'flex-end',
+        justifyContent: 'center',
+    },
+    bar: {
+        width: 4,
+        height: 12,
+        backgroundColor: colors.text,
+        borderRadius: 2,
+        transform: [{ scaleY: 0.5 }],
+    },
+    modalOverlay: {
+        flex: 1,
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        padding: spacing.lg,
+    },
+    modalContent: {
+        width: '100%',
+        maxWidth: 420,
+        backgroundColor: 'rgba(10,0,20,0.95)',
+        borderRadius: 12,
+        padding: spacing.md,
+    },
+    modalTitle: {
+        color: colors.text,
+        fontWeight: '700',
+        marginBottom: spacing.sm,
+    },
+    outputRow: {
+        paddingVertical: spacing.sm,
+        borderBottomWidth: 1,
+        borderBottomColor: 'rgba(255,255,255,0.03)',
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+    },
+    outputName: { color: colors.text },
+    outputSelected: { color: colors.accent },
+    modalClose: { marginTop: spacing.sm, alignSelf: 'flex-end' },
 });
 
 export default MiniPlayer;
