@@ -150,18 +150,62 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 return true;
             });
 
-            const genreMap = new Map<string, Song[]>();
+            // Debug: log sample metadata and counts to help diagnose grouping issues on mobile
+            try {
+                const sample = (filteredSongs || []).slice(0, 10).map(s => ({
+                    id: s.id,
+                    title: s.title,
+                    genre: s.genre,
+                    albumId: (s as any).albumId,
+                    album: (s as any).album,
+                    uploadedBy: s.uploadedBy,
+                }));
+                console.log('DEBUG: sample filtered songs metadata:', JSON.stringify(sample, null, 2));
+
+                const albumCounts: Record<string, number> = {};
+                const genreCounts: Record<string, number> = {};
+                (filteredSongs || []).forEach(s => {
+                    const a = (s as any).albumId || '__noAlbum';
+                    const g = s.genre || '__noGenre';
+                    albumCounts[a] = (albumCounts[a] || 0) + 1;
+                    genreCounts[g] = (genreCounts[g] || 0) + 1;
+                });
+                console.log('DEBUG: albumCounts:', JSON.stringify(albumCounts));
+                console.log('DEBUG: genreCounts:', JSON.stringify(genreCounts));
+            } catch (e) {
+                console.warn('DEBUG: failed to log sample metadata', e);
+            }
+
+            // Prefer grouping by albumId if available; otherwise group by genre.
+            const groupMap = new Map<string, Song[]>();
+            const nameMap = new Map<string, string>();
+
             filteredSongs.forEach((song: Song) => {
-                const genre = song.genre || 'Unknown Genre';
-                if (!genreMap.has(genre)) {
-                    genreMap.set(genre, []);
+                // Determine grouping key in order: albumId (preferred), album name (readable), then genre
+                const albumId = (song as any).albumId || '';
+                const albumNameField = (song as any).album || '';
+                const genreKey = song.genre || 'Unknown Genre';
+
+                const key = albumId || albumNameField || genreKey;
+
+                if (!groupMap.has(key)) {
+                    groupMap.set(key, []);
                 }
-                genreMap.get(genre)?.push(song);
+                groupMap.get(key)?.push(song);
+
+                // Prefer a friendly display name: albumNameField > albumId > genre
+                if (albumNameField) {
+                    nameMap.set(key, albumNameField);
+                } else if (albumId) {
+                    nameMap.set(key, albumId);
+                } else {
+                    nameMap.set(key, genreKey);
+                }
             });
 
-            const albumsArray: Album[] = Array.from(genreMap.entries()).map(([genre, songs]) => ({
-                id: genre,
-                name: genre,
+            const albumsArray: Album[] = Array.from(groupMap.entries()).map(([key, songs]) => ({
+                id: key,
+                name: nameMap.get(key) || key,
                 songs,
             }));
 

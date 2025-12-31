@@ -2,7 +2,6 @@
 import axios, { AxiosInstance, AxiosResponse } from 'axios';
 import * as SecureStore from 'expo-secure-store';
 import env from '../config/env';
-import { YouTubeSearchResult, YouTubeDownloadResult } from '../types/youtube';
 
 class ApiClient {
     private client: AxiosInstance;
@@ -12,13 +11,12 @@ class ApiClient {
 
         this.client = axios.create({
             baseURL: env.api.baseUrl,
-            timeout: 15000, // 15 second timeout to prevent hanging forever
+            timeout: 15000,
             headers: {
                 'Content-Type': 'application/json',
             },
         });
 
-        // Add request interceptor to include auth token
         this.client.interceptors.request.use(
             async (config) => {
                 console.log('📤 API Request:', config.method?.toUpperCase(), config.url);
@@ -34,7 +32,6 @@ class ApiClient {
             }
         );
 
-        // Add response interceptor for error handling
         this.client.interceptors.response.use(
             (response) => {
                 console.log('✅ API Response:', response.config.method?.toUpperCase(), response.config.url, 'Status:', response.status);
@@ -42,12 +39,11 @@ class ApiClient {
             },
             async (error) => {
                 if (error.code === 'ECONNABORTED') {
-                    console.error('⏱️ Request timeout - server took too long to respond');
+                    console.error('⏱️ Request timeout');
                 } else if (error.code === 'ERR_NETWORK') {
-                    console.error('🌐 Network error - cannot reach server at:', env.api.baseUrl);
+                    console.error('🌐 Network error');
                 } else if (error.response?.status === 401) {
-                    console.error('🔒 Unauthorized - clearing tokens');
-                    // Handle token expiration - clear tokens and redirect to login
+                    console.error('🔒 Unauthorized');
                     await SecureStore.deleteItemAsync('serverToken');
                     await SecureStore.deleteItemAsync('googleToken');
                 } else {
@@ -64,14 +60,6 @@ class ApiClient {
             return response.data;
         } catch (error: any) {
             console.error('❌ GET request failed:', endpoint, error.message);
-            if (error.response) {
-                try {
-                    console.error('>>> GET response status:', error.response.status);
-                    console.error('>>> GET response data:', JSON.stringify(error.response.data));
-                } catch (e) {
-                    console.error('>>> Failed to stringify error.response.data', e);
-                }
-            }
             throw error;
         }
     }
@@ -83,12 +71,8 @@ class ApiClient {
         } catch (error: any) {
             console.error('❌ POST request failed:', endpoint, error.message);
             if (error.response) {
-                try {
-                    console.error('>>> POST response status:', error.response.status);
-                    console.error('>>> POST response data:', JSON.stringify(error.response.data));
-                } catch (e) {
-                    console.error('>>> Failed to stringify error.response.data', e);
-                }
+                console.error('>>> POST response status:', error.response.status);
+                console.error('>>> POST response data:', JSON.stringify(error.response.data));
             }
             throw error;
         }
@@ -116,50 +100,11 @@ class ApiClient {
 
     async authenticateWithGoogle(googleToken: string): Promise<{ user: any; token: string }> {
         console.log('📤 Sending to backend - Token length:', googleToken.length);
-        console.log('📤 Request URL:', `${this.client.defaults.baseURL}/api/auth/google`);
-        console.log('📤 Request body:', { googleToken: googleToken.substring(0, 50) + '...' });
         return this.post('/api/auth/google', { googleToken });
     }
 
     async getSongs(): Promise<{ data: any[] }> {
         return this.get('/api/songs');
-    }
-
-    // YouTube integration
-    async searchYouTube(query: string): Promise<{ data: YouTubeSearchResult[] }> {
-        // Backend expects POST /api/youtube/search with JSON body { query }
-        try {
-            console.log('🔎 YouTube search (POST) with query:', query);
-            const response = await this.post('/api/youtube/search', { query });
-            return response as { data: YouTubeSearchResult[] };
-        } catch (err: any) {
-            console.error('YouTube search POST failed:', err?.message || err);
-            throw err;
-        }
-    }
-
-    async downloadFromYouTube(videoId: string): Promise<YouTubeDownloadResult> {
-        console.log('⬇️ YouTube download request for videoId:', videoId);
-        const attempts = ['/api/youtube/download', '/youtube/download', '/api/v1/youtube/download'];
-        let lastError: any = null;
-        for (const endpoint of attempts) {
-            try {
-                console.log('⬇️ Trying download endpoint:', endpoint);
-                const res = await this.post(endpoint, { videoId });
-                return res as YouTubeDownloadResult;
-            } catch (err: any) {
-                lastError = err;
-                const status = err?.response?.status;
-                console.warn('YouTube download attempt failed for', endpoint, 'status:', status || err.message);
-                if (status && status !== 404) break;
-            }
-        }
-        console.error('YouTube download failed for all tried endpoints');
-        throw lastError || new Error('YouTube download failed');
-    }
-
-    getBaseUrl(): string {
-        return this.client.defaults.baseURL || '';
     }
 
     async getMyUploads(): Promise<{ data: any[] }> {
@@ -198,7 +143,6 @@ class ApiClient {
     async getStreamUrlWithAuth(songId: number): Promise<string> {
         const token = await SecureStore.getItemAsync('serverToken');
         const url = `${env.api.baseUrl}/api/songs/${songId}/stream`;
-        // Return URL with token in query params for audio streaming
         return token ? `${url}?token=${token}` : url;
     }
 
@@ -209,8 +153,6 @@ class ApiClient {
     async getThumbnailUrlWithAuth(filename: string): Promise<string> {
         try {
             const token = await SecureStore.getItemAsync('serverToken');
-
-            // Fetch the image as a blob with proper auth headers
             const response = await fetch(`${env.api.baseUrl}/api/songs/thumbnails/${filename}`, {
                 headers: {
                     'Authorization': `Bearer ${token}`,
@@ -218,14 +160,10 @@ class ApiClient {
             });
 
             if (!response.ok) {
-                // Silently fail for missing thumbnails (404 is normal)
                 throw new Error(`Failed to fetch thumbnail: ${response.status}`);
             }
 
-            // Convert to blob and create data URL
             const blob = await response.blob();
-
-            // For React Native, we need to use FileReader to convert blob to base64
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onloadend = () => {
@@ -236,7 +174,6 @@ class ApiClient {
                 reader.readAsDataURL(blob);
             });
         } catch (error) {
-            // Silently fail - missing thumbnails are normal
             throw error;
         }
     }
@@ -245,7 +182,6 @@ class ApiClient {
         return this.get(`/api/songs/thumbnails/${filename}/colors`);
     }
 
-    // PIN Management APIs
     async setPin(pinHash: string): Promise<{ message: string }> {
         console.log('🔐 Setting PIN on server');
         return this.post('/api/auth/profile/pin', { pinHash });
@@ -264,6 +200,11 @@ class ApiClient {
     async getUserProfile(): Promise<any> {
         console.log('👤 Fetching user profile');
         return this.get('/api/auth/profile');
+    }
+
+
+    getBaseUrl(): string {
+        return env.api.baseUrl;
     }
 }
 

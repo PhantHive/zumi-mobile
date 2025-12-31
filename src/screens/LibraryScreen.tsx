@@ -8,10 +8,13 @@ import {
     TouchableOpacity,
     ScrollView,
     RefreshControl,
+    Alert,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
 import { useMusic } from '../contexts/MusicContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigation } from '@react-navigation/native';
 import { apiClient } from '../services/apiClient';
 import { Song } from '../types';
 import SongListItem from '../components/SongListItem';
@@ -34,6 +37,8 @@ const filters: Filter[] = [
 
 const LibraryScreen: React.FC = () => {
     const { currentSong } = useMusic();
+    const { user } = useAuth();
+    const navigation = useNavigation<any>();
     const [activeFilter, setActiveFilter] = useState<FilterType>('all');
     const [songs, setSongs] = useState<Song[]>([]);
     const [isLoading, setIsLoading] = useState(false);
@@ -60,6 +65,28 @@ const LibraryScreen: React.FC = () => {
                     break;
             }
             setSongs(response.data || []);
+            // Check for any 'on-hold' songs uploaded by current user and prompt to edit
+            try {
+                const all = response.data || [];
+                const onHold = all.filter((s: Song) => (s as any).onHold || (s as any).status === 'on-hold');
+                const myOnHold = onHold.filter((s: Song) => s.uploadedBy && user && s.uploadedBy === user.email);
+                if (myOnHold.length > 0) {
+                    // Prompt the user once to edit the first on-hold song
+                    setTimeout(() => {
+                        const first = myOnHold[0];
+                        Alert.alert(
+                            'Song On Hold',
+                            `One of your uploads "${first.title}" is on hold. Would you like to edit it now?`,
+                            [
+                                { text: 'Later', style: 'cancel' },
+                                { text: 'Edit', onPress: () => navigation.navigate('Upload' as any, { editSong: first }) },
+                            ]
+                        );
+                    }, 400);
+                }
+            } catch (e) {
+                // ignore
+            }
         } catch (error) {
             console.error('Failed to load songs:', error);
             setSongs([]);

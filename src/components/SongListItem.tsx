@@ -9,6 +9,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import { Song } from '../types';
 import { useMusic } from '../contexts/MusicContext';
+import { useAuth } from '../contexts/AuthContext';
+import { useNavigation } from '@react-navigation/native';
 import { apiClient } from '../services/apiClient';
 import { colors, spacing, typography, borderRadius } from '../styles/theme';
 import { images } from '../utils/assets';
@@ -24,6 +26,8 @@ interface SongListItemProps {
 
 const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeToggle }) => {
     const { playSong, pauseSong } = useMusic();
+    const { user } = useAuth();
+    const navigation = useNavigation<any>();
     const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
     const [songColors, setSongColors] = useState<ExtractedColors | null>(null);
     const [isLiked, setIsLiked] = useState(false);
@@ -72,6 +76,13 @@ const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeTogg
         } finally {
             setIsTogglingLike(false);
         }
+    };
+
+    const handleEditPress = (e: any) => {
+        // Prevent parent touch (play) from firing
+        try { e.stopPropagation(); } catch (err) { /* ignore */ }
+        // Navigate to upload screen in edit mode
+        navigation.navigate('Upload' as any, { editSong: song });
     };
 
     const accentColor = songColors?.vibrant || colors.accent;
@@ -145,6 +156,17 @@ const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeTogg
                 />
             </TouchableOpacity>
 
+            {/* Edit Button (only for uploader) */}
+            {user && song.uploadedBy && user.email === song.uploadedBy && (
+                <TouchableOpacity
+                    onPress={handleEditPress}
+                    style={styles.editButton}
+                    activeOpacity={0.8}
+                >
+                    <Ionicons name="pencil" size={20} color={colors.accent} />
+                </TouchableOpacity>
+            )}
+
             {/* Play/Pause Icon */}
             <Ionicons
                 name={isPlaying ? 'pause-circle' : 'play-circle'}
@@ -212,6 +234,12 @@ const styles = StyleSheet.create({
     likeButton: {
         padding: spacing.sm,
         marginRight: spacing.xs,
+    },
+    editButton: {
+        padding: spacing.sm,
+        marginRight: spacing.xs,
+        justifyContent: 'center',
+        alignItems: 'center',
     },
 });
 
