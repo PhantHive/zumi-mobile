@@ -11,6 +11,10 @@ import {
     ScrollView,
     Switch,
     ImageBackground,
+    Modal,
+    FlatList,
+    Image,
+    Pressable,
 } from 'react-native';
 import * as DocumentPicker from 'expo-document-picker';
 import * as ImagePicker from 'expo-image-picker';
@@ -21,6 +25,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { GENRES, Genre } from '../types';
 import { colors, spacing, typography, borderRadius } from '../styles/theme';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import * as FileSystem from 'expo-file-system';
 
 const UploadScreen: React.FC = () => {
     const { refreshSongs } = useMusic();
@@ -38,6 +43,13 @@ const UploadScreen: React.FC = () => {
     const [isUploading, setIsUploading] = useState(false);
     const [isEditMode, setIsEditMode] = useState(false);
     const [editingSongId, setEditingSongId] = useState<number | null>(null);
+    // Thumbnail suggestion UI state
+    const [suggestionsModalVisible, setSuggestionsModalVisible] = useState(false);
+    const [suggestions, setSuggestions] = useState<any[]>([]);
+    const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+    const [suggestionsPage, setSuggestionsPage] = useState(0);
+    const [suggestionsQuery, setSuggestionsQuery] = useState('');
+    const [hasMoreSuggestions, setHasMoreSuggestions] = useState(true);
 
     // Enhanced metadata
     const [visibility, setVisibility] = useState<'public' | 'private'>('public');
@@ -46,6 +58,15 @@ const UploadScreen: React.FC = () => {
     const [mood, setMood] = useState('');
     const [language, setLanguage] = useState('');
     const [tags, setTags] = useState('');
+
+    // helper to build default suggestion query
+    const buildSuggestionQuery = (t?: string, a?: string) => {
+        const parts = [] as string[];
+        if (t && t.trim()) parts.push(t.trim());
+        if (a && a.trim()) parts.push(a.trim());
+        parts.push('album cover');
+        return parts.join(' ');
+    };
 
     const pickAudio = async () => {
         try {
@@ -82,6 +103,71 @@ const UploadScreen: React.FC = () => {
             }
         } catch (error) {
             console.error('Error picking thumbnail:', error);
+        }
+    };
+
+    // Open suggestions modal and initialize query + first fetch
+    const openSuggestions = () => {
+        const q = buildSuggestionQuery(title, artist);
+        setSuggestionsQuery(q);
+        setSuggestions([]);
+        setSuggestionsPage(0);
+        setHasMoreSuggestions(true);
+        setSuggestionsModalVisible(true);
+        fetchSuggestions(q, 0);
+    };
+
+    // Fetch image suggestions from DuckDuckGo i.js endpoint (client-side). Paginate using 's' offset.
+    const fetchSuggestions = async (query: string, page: number = 0) => {
+        if (suggestionsLoading || !hasMoreSuggestions) return;
+        setSuggestionsLoading(true);
+        try {
+            // DuckDuckGo returns up to ~100 results starting from offset 's'
+            const offset = page * 100;
+            const url = `https://duckduckgo.com/i.js?q=${encodeURIComponent(query)}&o=json&s=${offset}`;
+            const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+            if (!res.ok) throw new Error(`Image fetch failed: ${res.status}`);
+            const data = await res.json();
+            const items = data.results || data; // fallback
+            if (!items || items.length === 0) {
+                setHasMoreSuggestions(false);
+            } else {
+                setSuggestions(prev => [...prev, ...items]);
+                setSuggestionsPage(page + 1);
+                // If less than page size, no more
+                if (items.length < 100) setHasMoreSuggestions(false);
+            }
+        } catch (err) {
+            console.warn('fetchSuggestions error', err);
+            setHasMoreSuggestions(false);
+        } finally {
+            setSuggestionsLoading(false);
+        }
+    };
+
+    // Download the selected image to local cache and set as thumbnail object compatible with upload
+    const downloadImageAndSetThumbnail = async (imageUrl: string) => {
+        try {
+            setSuggestionsModalVisible(false);
+            // prepare filename
+            const ts = Date.now();
+            const extMatch = imageUrl.match(/\.([a-zA-Z0-9]{3,4})(?:\?|$)/);
+            const ext = extMatch ? extMatch[1] : 'jpg';
+            const filename = `thumb-${ts}.${ext}`;
+            const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+
+            const downloadRes = await FileSystem.downloadAsync(imageUrl, fileUri);
+            if (downloadRes && downloadRes.status !== 200 && !downloadRes?.uri) {
+                console.warn('Download error', downloadRes);
+            }
+
+            // Set thumbnail to object similar to ImagePicker asset
+            const localThumb: any = { uri: downloadRes.uri || fileUri, name: filename, type: 'image/jpeg' };
+            setExistingThumbnailUrl(null);
+            setThumbnail(localThumb);
+        } catch (err) {
+            console.error('Failed to download image', err);
+            Alert.alert('Error', 'Failed to download selected thumbnail.');
         }
     };
 
@@ -302,12 +388,20 @@ const UploadScreen: React.FC = () => {
 
                         <TouchableOpacity
                             style={[styles.fileButton, styles.fileButtonOverlay]}
-                            onPress={pickThumbnail}
+                            onPress={() => {
+                                // Offer both options: pick from library or get suggestions when editing
+                                if (isEditMode) {
+                                    // Open a simple action: show suggestions modal
+                                    openSuggestions();
+                                } else {
+                                    pickThumbnail();
+                                }
+                            }}
                             disabled={isUploading}
                         >
                             <Ionicons name="image" size={24} color={colors.text} />
                             <Text style={styles.fileButtonText}>
-                                {(thumbnail || existingThumbnailUrl) ? 'Thumbnail Selected' : 'Choose Thumbnail (Optional)'}
+                                {(thumbnail || existingThumbnailUrl) ? 'Thumbnail Selected' : (isEditMode ? 'Suggest / Choose Thumbnail' : 'Choose Thumbnail (Optional)')}
                             </Text>
                         </TouchableOpacity>
                     </View>
@@ -335,7 +429,7 @@ const UploadScreen: React.FC = () => {
 
                     <TouchableOpacity
                         style={styles.fileButton}
-                        onPress={pickThumbnail}
+                        onPress={() => { if (isEditMode) openSuggestions(); else pickThumbnail(); }}
                         disabled={isUploading}
                     >
                         <Ionicons name="image" size={24} color={colors.text} />
@@ -508,6 +602,53 @@ const UploadScreen: React.FC = () => {
                     )}
                 </TouchableOpacity>
             </View>
+
+            {/* Suggestions Modal */}
+            <Modal visible={suggestionsModalVisible} animationType="slide" transparent>
+                <View style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', padding: spacing.md }}>
+                    <View style={{ backgroundColor: colors.card, borderRadius: borderRadius.md, flex: 1, padding: spacing.md }}>
+                        <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: spacing.sm }}>
+                            <TextInput
+                                style={{ flex: 1, backgroundColor: colors.background, color: colors.text, padding: spacing.sm, borderRadius: borderRadius.sm }}
+                                value={suggestionsQuery}
+                                onChangeText={setSuggestionsQuery}
+                                placeholder={'Search thumbnails...'}
+                                placeholderTextColor={colors.textSecondary}
+                            />
+                            <TouchableOpacity onPress={() => { setSuggestions([]); setSuggestionsPage(0); setHasMoreSuggestions(true); fetchSuggestions(suggestionsQuery, 0); }} style={{ marginLeft: spacing.sm }}>
+                                <Text style={{ color: colors.accent, fontWeight: '600' }}>Search</Text>
+                            </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setSuggestionsModalVisible(false)} style={{ marginLeft: spacing.sm }}>
+                                <Text style={{ color: colors.textSecondary }}>Close</Text>
+                            </TouchableOpacity>
+                        </View>
+
+                        {/* Highlight top 3 suggestions */}
+                        <Text style={{ ...typography.body, color: colors.text, fontWeight: '700', marginBottom: spacing.sm }}>Top Picks</Text>
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: spacing.sm }}>
+                            {suggestions.slice(0, 3).map((it, idx) => (
+                                <Pressable key={idx} onPress={() => downloadImageAndSetThumbnail(it.image || it.thumbnail)} style={{ marginRight: spacing.sm }}>
+                                    <Image source={{ uri: it.thumbnail || it.image }} style={{ width: 140, height: 140, borderRadius: borderRadius.sm }} />
+                                </Pressable>
+                            ))}
+                        </ScrollView>
+
+                        <Text style={{ ...typography.caption, color: colors.textSecondary, marginBottom: spacing.sm }}>More results</Text>
+                        <FlatList
+                            data={suggestions}
+                            keyExtractor={(item, index) => String(item?.image || item?.thumbnail || index)}
+                            renderItem={({ item }) => (
+                                <Pressable onPress={() => downloadImageAndSetThumbnail(item.image || item.thumbnail)} style={{ marginBottom: spacing.sm }}>
+                                    <Image source={{ uri: item.thumbnail || item.image }} style={{ width: '100%', height: 120, borderRadius: borderRadius.sm }} />
+                                </Pressable>
+                            )}
+                            onEndReached={() => { if (hasMoreSuggestions) fetchSuggestions(suggestionsQuery, suggestionsPage); }}
+                            onEndReachedThreshold={0.5}
+                        />
+                        {suggestionsLoading && <ActivityIndicator style={{ marginTop: spacing.sm }} />}
+                    </View>
+                </View>
+            </Modal>
         </ScrollView>
     );
 };
