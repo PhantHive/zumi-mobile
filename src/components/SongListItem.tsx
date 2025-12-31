@@ -5,6 +5,8 @@ import {
     Text,
     StyleSheet,
     TouchableOpacity,
+    Alert,
+    ActivityIndicator,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { Song } from '../types';
@@ -26,12 +28,14 @@ interface SongListItemProps {
 
 const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeToggle }) => {
     const { playSong, pauseSong } = useMusic();
+    const { refreshSongs } = useMusic();
     const { user } = useAuth();
     const navigation = useNavigation<any>();
     const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
     const [songColors, setSongColors] = useState<ExtractedColors | null>(null);
     const [isLiked, setIsLiked] = useState(false);
     const [isTogglingLike, setIsTogglingLike] = useState(false);
+    const [isDeleting, setIsDeleting] = useState(false);
 
     useEffect(() => {
         const loadThumbnailAndColors = async () => {
@@ -85,6 +89,44 @@ const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeTogg
         navigation.navigate('Upload' as any, { editSong: song });
     };
 
+    const handleLongPress = (e: any) => {
+        try { e?.stopPropagation(); } catch (err) { /* ignore */ }
+
+        // Allow deletion only for the uploader (prevent accidental deletion)
+        const canDelete = user && song.uploadedBy && user.email === song.uploadedBy;
+        if (!canDelete) {
+            Alert.alert('Cannot delete', 'You can only delete songs you uploaded.');
+            return;
+        }
+
+        Alert.alert(
+            'Delete song',
+            `Are you sure you want to delete "${song.title}"? This will remove the database row.`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            setIsDeleting(true);
+                            await apiClient.deleteSongRow(song.id);
+                            // Refresh library
+                            await refreshSongs();
+                            Alert.alert('Deleted', 'Song was removed.');
+                        } catch (err) {
+                            console.error('Failed to delete song row:', err);
+                            Alert.alert('Error', 'Failed to delete song.');
+                        } finally {
+                            setIsDeleting(false);
+                        }
+                    }
+                }
+            ],
+            { cancelable: true }
+        );
+    };
+
     const accentColor = songColors?.vibrant || colors.accent;
     const bgColor = isPlaying && songColors
         ? hexToRgba(songColors.background, 0.12)
@@ -99,6 +141,7 @@ const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeTogg
                 }
             ]}
             onPress={handlePress}
+            onLongPress={handleLongPress}
             activeOpacity={0.7}
         >
             {/* Subtle glow when playing */}
@@ -165,6 +208,11 @@ const SongListItem: React.FC<SongListItemProps> = ({ song, isPlaying, onLikeTogg
                 >
                     <Ionicons name="pencil" size={20} color={colors.accent} />
                 </TouchableOpacity>
+            )}
+
+            {/* If deleting, show spinner overlay on the right */}
+            {isDeleting && (
+                <ActivityIndicator style={{ marginRight: spacing.md }} color={colors.accent} />
             )}
 
             {/* Play/Pause Icon */}

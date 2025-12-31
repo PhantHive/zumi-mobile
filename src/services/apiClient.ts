@@ -136,6 +136,24 @@ class ApiClient {
         return response.data;
     }
 
+    // Update an existing song. Accepts FormData (for files) or JSON metadata.
+    async updateSong(songId: number, payload: FormData | object): Promise<{ data: any }> {
+        try {
+            if (payload instanceof FormData) {
+                const response = await this.client.patch(`/api/songs/${songId}`, payload, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                });
+                return response.data;
+            } else {
+                const response = await this.client.patch(`/api/songs/${songId}`, payload);
+                return response.data;
+            }
+        } catch (error: any) {
+            console.error('❌ updateSong failed:', error.message);
+            throw error;
+        }
+    }
+
     getStreamUrl(songId: number): string {
         return `${env.api.baseUrl}/api/songs/${songId}/stream`;
     }
@@ -202,6 +220,16 @@ class ApiClient {
         return this.get('/api/auth/profile');
     }
 
+    // Delete a song database row (server-side) without touching other resources
+    async deleteSongRow(songId: number): Promise<{ message: string }> {
+        try {
+            const response = await this.client.delete(`/api/songs/${songId}/row`);
+            return response.data;
+        } catch (error: any) {
+            console.error('❌ deleteSongRow failed:', error.message);
+            throw error;
+        }
+    }
 
     getBaseUrl(): string {
         return env.api.baseUrl;
