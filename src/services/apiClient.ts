@@ -123,6 +123,10 @@ class ApiClient {
         return this.get('/api/songs/artists');
     }
 
+    async getGenres(): Promise<{ data: Array<{ genre: string; count: number }> }> {
+        return this.get('/api/songs/genres');
+    }
+
     async toggleLike(songId: number): Promise<any> {
         return this.post(`/api/songs/${songId}/like`);
     }
