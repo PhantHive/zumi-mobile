@@ -18,7 +18,16 @@ web-build/
 *.key
 *.mobileprovision
 *.orig.*
-android/
+android/build/
+android/app/build/
+android/.gradle/
+android/gradle/
+android/gradlew
+android/gradlew.bat
+*.iml
+.gradle
+local.properties
+EOF
 ios/
 
 # Metro
