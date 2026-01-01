@@ -16,10 +16,10 @@ async function dataUriToLocalFile(dataUri: string): Promise<string> {
         const base64Data = dataUri.split(',')[1];
 
         console.log('💾 Converting data URI to local file...');
-        // @ts-ignore - writeAsStringAsync exists at runtime
+        // writeAsStringAsync accepts encoding string; use 'base64' to avoid missing enum in types
         await FileSystem.writeAsStringAsync(fileUri, base64Data, {
-            encoding: FileSystem.EncodingType.Base64
-        });
+            encoding: 'base64' as any,
+        } as any);
 
         console.log('✅ Data URI converted to local file:', fileUri);
         return fileUri;

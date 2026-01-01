@@ -7,9 +7,10 @@ import {
     TouchableOpacity,
     Animated,
     PanResponder,
-    Modal,
     FlatList,
-    ActivityIndicator,
+    useWindowDimensions,
+    TouchableWithoutFeedback,
+    Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useMusic } from '../contexts/MusicContext';
@@ -17,9 +18,11 @@ import { apiClient } from '../services/apiClient';
 import { colors, spacing } from '../styles/theme';
 import { images } from '../utils/assets';
 import { extractColorsFromImage, hexToRgba } from '../utils/colorExtractor';
+import { searchImages } from '../services/imageSearchService';
 import type { ExtractedColors } from '../utils/colorExtractor';
 import ImageWithLoader from './ImageWithLoader';
-import { getAvailableOutputs, selectOutput, AudioOutput } from '../services/audioRoutingService';
+import AudioOutputModal from './AudioOutputModal';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const MiniPlayer: React.FC = () => {
     const {
@@ -34,52 +37,67 @@ const MiniPlayer: React.FC = () => {
         seekTo,
     } = useMusic();
 
+    const insets = useSafeAreaInsets();
+    const { width: windowWidth, height: windowHeight } = useWindowDimensions();
+
     const [thumbnailUrl, setThumbnailUrl] = useState<string | null>(null);
     const [dynamicColors, setDynamicColors] = useState<ExtractedColors | null>(null);
+
     const [isDragging, setIsDragging] = useState(false);
     const [dragPosition, setDragPosition] = useState(0);
-    const [routingModalVisible, setRoutingModalVisible] = useState(false);
-    const [outputs, setOutputs] = useState<AudioOutput[]>([]);
-    const [outputsLoading, setOutputsLoading] = useState(false);
-    const [selectedOutput, setSelectedOutput] = useState<string>('system');
-    const [selectingOutput, setSelectingOutput] = useState(false);
     const dragPositionRef = useRef(0);
 
-    // Animated soundbar state
-    const barAnim1 = useRef(new Animated.Value(0.3)).current;
-    const barAnim2 = useRef(new Animated.Value(0.5)).current;
-    const barAnim3 = useRef(new Animated.Value(0.4)).current;
+    const [searchResults, setSearchResults] = useState<string[]>([]);
+    const [imagePickerVisible, setImagePickerVisible] = useState(false);
 
-    const colorFadeAnim = useRef(new Animated.Value(1)).current;
-    const progressHandleScale = useRef(new Animated.Value(0)).current;
+    // Simple audio output modal
+    const [showAudioModal, setShowAudioModal] = useState(false);
+
     const progressBarTrackRef = useRef<View | null>(null);
     const trackLayoutRef = useRef<{ x: number; width: number }>({ x: 0, width: 0 });
     const durationRef = useRef(0);
 
-    // Convert milliseconds to seconds for display
+    // animated values
+    const colorFadeAnim = useRef(new Animated.Value(1)).current;
+    const progressHandleScale = useRef(new Animated.Value(0)).current;
+
+    // soundbar animation
+    const barAnim1 = useRef(new Animated.Value(0.4)).current;
+    const barAnim2 = useRef(new Animated.Value(0.6)).current;
+    const barAnim3 = useRef(new Animated.Value(0.5)).current;
+
+    // compute times
     const currentTime = Math.floor((isDragging ? dragPosition : position) / 1000);
     const totalDuration = Math.floor(duration / 1000);
     const progress = duration > 0 ? ((isDragging ? dragPosition : position) / duration) * 100 : 0;
 
-    // Reset timer when song changes
     useEffect(() => {
-        setIsDragging(false);
-    }, [currentSong?.id]);
+        durationRef.current = duration || 0;
+    }, [duration]);
 
     useEffect(() => {
+        if (isPlaying) startBarAnimation();
+        else stopBarAnimation();
+        return () => stopBarAnimation();
+    }, [isPlaying]);
+
+    useEffect(() => {
+        let searched = false;
         const loadThumbnailAndColors = async () => {
-            if (currentSong?.thumbnailUrl) {
-                try {
-                    Animated.timing(colorFadeAnim, {
-                        toValue: 0,
-                        duration: 200,
-                        useNativeDriver: false,
-                    }).start();
+            if (!currentSong) return;
 
+            Animated.timing(colorFadeAnim, {
+                toValue: 0,
+                duration: 200,
+                useNativeDriver: false,
+            }).start();
+
+            // Try provided thumbnail first
+            if (currentSong.thumbnailUrl) {
+                try {
                     const url = await apiClient.getThumbnailUrlWithAuth(currentSong.thumbnailUrl);
                     setThumbnailUrl(url);
 
-                    // Extract colors from filename, not full URL
                     const filename = currentSong.thumbnailUrl;
                     const colors = await extractColorsFromImage(filename);
                     setDynamicColors(colors);
@@ -89,32 +107,76 @@ const MiniPlayer: React.FC = () => {
                         duration: 500,
                         useNativeDriver: false,
                     }).start();
+                    return;
                 } catch (error) {
-                    setThumbnailUrl(null);
-                    setDynamicColors(null);
-                    colorFadeAnim.setValue(1);
+                    // fallthrough to search
                 }
-            } else {
-                setThumbnailUrl(null);
-                setDynamicColors(null);
             }
+
+            // If no thumbnail or failed, search by song title + artist (Bing fallback)
+            try {
+                const query = `${currentSong.title || ''} ${currentSong.artist || ''}`.trim();
+                if (query && !searched) {
+                    searched = true;
+                    const results = await searchImages(query, 6);
+                    if (results && results.length > 0) {
+                        // set first as default but keep suggestions for the user to choose
+                        const chosen = results[0];
+                        setThumbnailUrl(chosen);
+                        setSearchResults(results);
+                        // show a small picker so the user can pick a better image if they want
+                        setImagePickerVisible(true);
+                        try {
+                            const colors = await extractColorsFromImage(chosen);
+                            setDynamicColors(colors);
+                        } catch (e) {
+                            setDynamicColors(null);
+                        }
+                        Animated.timing(colorFadeAnim, {
+                            toValue: 1,
+                            duration: 500,
+                            useNativeDriver: false,
+                        }).start();
+                        return;
+                    }
+                }
+            } catch (err) {
+                // ignore search errors
+            }
+
+            // fallback -> no thumbnail
+            setThumbnailUrl(null);
+            setDynamicColors(null);
+            colorFadeAnim.setValue(1);
         };
         loadThumbnailAndColors();
-    }, [currentSong?.thumbnailUrl, colorFadeAnim]);
+    }, [currentSong?.thumbnailUrl, currentSong?.title, currentSong?.artist, colorFadeAnim]);
 
-    // Keep duration in a ref to avoid stale closure inside pan handlers
-    useEffect(() => {
-        durationRef.current = duration || 0;
-    }, [duration]);
+    // soundbar animation helpers
+    const startBarAnimation = () => {
+        stopBarAnimation();
+        const seq1 = Animated.sequence([
+            Animated.timing(barAnim1, { toValue: 1.0, duration: 420, useNativeDriver: true }),
+            Animated.timing(barAnim1, { toValue: 0.35, duration: 360, useNativeDriver: true }),
+        ]);
+        const seq2 = Animated.sequence([
+            Animated.timing(barAnim2, { toValue: 0.4, duration: 380, useNativeDriver: true }),
+            Animated.timing(barAnim2, { toValue: 1.0, duration: 440, useNativeDriver: true }),
+        ]);
+        const seq3 = Animated.sequence([
+            Animated.timing(barAnim3, { toValue: 0.95, duration: 460, useNativeDriver: true }),
+            Animated.timing(barAnim3, { toValue: 0.45, duration: 340, useNativeDriver: true }),
+        ]);
+        Animated.loop(Animated.parallel([seq1, seq2, seq3])).start();
+    };
 
-    // start/stop soundbar animation when playback changes
-    useEffect(() => {
-        if (isPlaying) startBarAnimation();
-        else stopBarAnimation();
-        return () => stopBarAnimation();
-    }, [isPlaying]);
+    const stopBarAnimation = () => {
+        barAnim1.stopAnimation(() => barAnim1.setValue(0.4));
+        barAnim2.stopAnimation(() => barAnim2.setValue(0.6));
+        barAnim3.stopAnimation(() => barAnim3.setValue(0.5));
+    };
 
-    // Pan responder for dragging the progress bar
+    // Pan responder for progress bar
     const panResponder = useRef(
         PanResponder.create({
             onStartShouldSetPanResponder: () => true,
@@ -125,17 +187,13 @@ const MiniPlayer: React.FC = () => {
             onShouldBlockNativeResponder: () => true,
             onPanResponderGrant: (evt) => {
                 const d = durationRef.current;
-                if (!d || d <= 0) {
-                    console.log('[MiniPlayer] Grant ignored: no duration (ref=', d, ')');
-                    return;
-                }
+                if (!d || d <= 0) return;
                 setIsDragging(true);
                 const locX = evt.nativeEvent.locationX;
                 const width = trackLayoutRef.current.width || 0;
                 const relativeX = Math.max(0, Math.min(width, locX));
-                const newProgress = width > 0 ? (relativeX / width) : 0;
+                const newProgress = width > 0 ? relativeX / width : 0;
                 const newPosition = Math.max(0, Math.min(d, newProgress * d));
-                console.log('[MiniPlayer] GRANT locX:', locX, 'width:', width, 'relativeX:', relativeX, 'progress:', newProgress, 'pos:', newPosition);
                 dragPositionRef.current = newPosition;
                 setDragPosition(newPosition);
                 Animated.spring(progressHandleScale, {
@@ -146,27 +204,19 @@ const MiniPlayer: React.FC = () => {
             },
             onPanResponderMove: (evt) => {
                 const d = durationRef.current;
-                if (!d || d <= 0) {
-                    console.log('[MiniPlayer] Move ignored: no duration (ref=', d, ')');
-                    return;
-                }
+                if (!d || d <= 0) return;
                 const locX = evt.nativeEvent.locationX;
                 const width = trackLayoutRef.current.width || 0;
                 const relativeX = Math.max(0, Math.min(width, locX));
-                const newProgress = width > 0 ? (relativeX / width) : 0;
+                const newProgress = width > 0 ? relativeX / width : 0;
                 const newPosition = Math.max(0, Math.min(d, newProgress * d));
-                console.log('[MiniPlayer] MOVE locX:', locX, 'width:', width, 'relativeX:', relativeX, 'progress:', newProgress, 'pos:', newPosition);
                 dragPositionRef.current = newPosition;
                 setDragPosition(newPosition);
             },
             onPanResponderRelease: async () => {
                 const d = durationRef.current;
-                if (!d || d <= 0) {
-                    console.log('[MiniPlayer] Release ignored: no duration (ref=', d, ')');
-                    return;
-                }
+                if (!d || d <= 0) return;
                 const finalPosition = Math.max(0, Math.min(d, dragPositionRef.current));
-                console.log('[MiniPlayer] RELEASE seekTo:', finalPosition, 'dragPositionRef:', dragPositionRef.current, 'durationRef:', d);
                 try {
                     await seekTo(finalPosition);
                 } catch (e) {
@@ -192,33 +242,6 @@ const MiniPlayer: React.FC = () => {
         }
     };
 
-    const openRouting = async () => {
-        setRoutingModalVisible(true);
-        setOutputsLoading(true);
-        try {
-            const list = await getAvailableOutputs();
-            setOutputs(list);
-        } catch (err) {
-            console.warn('Failed to get outputs', err);
-            setOutputs([]);
-        } finally {
-            setOutputsLoading(false);
-        }
-    };
-
-    const handleSelectOutput = async (output: AudioOutput) => {
-        setSelectingOutput(true);
-        try {
-            await selectOutput(output.id);
-            setSelectedOutput(output.id);
-            setRoutingModalVisible(false);
-        } catch (err) {
-            console.warn('select output failed', err);
-        } finally {
-            setSelectingOutput(false);
-        }
-    };
-
     const formatTime = (seconds: number) => {
         const mins = Math.floor(seconds / 60);
         const secs = Math.floor(seconds % 60);
@@ -227,30 +250,26 @@ const MiniPlayer: React.FC = () => {
 
     const backgroundColor = colorFadeAnim.interpolate({
         inputRange: [0, 1],
-        outputRange: ['rgba(10, 0, 20, 0.98)', dynamicColors
-            ? hexToRgba(dynamicColors.background, 0.98)
-            : 'rgba(10, 0, 20, 0.98)']
+        outputRange: [
+            'rgba(10, 0, 20, 0.98)',
+            dynamicColors ? hexToRgba(dynamicColors.background, 0.98) : 'rgba(10, 0, 20, 0.98)',
+        ],
     });
-
-    const gradientColor = dynamicColors
-        ? hexToRgba(dynamicColors.muted, 0.35)
-        : 'rgba(74, 58, 110, 0.3)';
 
     const accentColor = dynamicColors?.vibrant || colors.accent;
 
     const handleScale = progressHandleScale.interpolate({
         inputRange: [0, 1],
-        outputRange: [1, 1.35], // visible at rest, grows when dragging
+        outputRange: [1, 1.35],
     });
 
     return (
-        <Animated.View style={[styles.container, { backgroundColor }]}>
+        <Animated.View style={[styles.container, { backgroundColor, paddingBottom: Math.max(insets.bottom, 8) }]}>
             <View style={styles.progressBarContainer}>
                 <View
                     ref={progressBarTrackRef}
                     style={styles.progressBarTrack}
                     {...panResponder.panHandlers}
-                    hitSlop={{ top: 20, bottom: 20, left: 20, right: 20 }}
                     onLayout={(e) => {
                         const { width } = e.nativeEvent.layout;
                         trackLayoutRef.current = { x: 0, width };
@@ -262,7 +281,7 @@ const MiniPlayer: React.FC = () => {
                             {
                                 width: `${progress}%`,
                                 backgroundColor: accentColor,
-                            }
+                            },
                         ]}
                     />
                     <Animated.View
@@ -273,7 +292,7 @@ const MiniPlayer: React.FC = () => {
                                 backgroundColor: accentColor,
                                 opacity: isDragging ? 1 : 0,
                                 transform: [{ scale: handleScale }],
-                            }
+                            },
                         ]}
                         pointerEvents="none"
                     />
@@ -288,7 +307,7 @@ const MiniPlayer: React.FC = () => {
                             {
                                 backgroundColor: hexToRgba(dynamicColors.vibrant, 0.08),
                                 opacity: colorFadeAnim,
-                            }
+                            },
                         ]}
                         pointerEvents="none"
                     />
@@ -298,7 +317,7 @@ const MiniPlayer: React.FC = () => {
                             {
                                 backgroundColor: hexToRgba(dynamicColors.background, 0.15),
                                 opacity: colorFadeAnim,
-                            }
+                            },
                         ]}
                         pointerEvents="none"
                     />
@@ -310,7 +329,7 @@ const MiniPlayer: React.FC = () => {
                     <ImageWithLoader
                         source={thumbnailUrl ? { uri: thumbnailUrl } : images.placeholder}
                         defaultSource={images.placeholder}
-                        style={styles.thumbnail}
+                        style={[styles.thumbnail, { width: 54, height: 54, borderRadius: 8 }]}
                         resizeMode="cover"
                     />
                     {dynamicColors && (
@@ -320,9 +339,14 @@ const MiniPlayer: React.FC = () => {
                                 {
                                     backgroundColor: hexToRgba(dynamicColors.vibrant, 0.15),
                                     opacity: colorFadeAnim,
-                                }
+                                },
                             ]}
                         />
+                    )}
+                    {searchResults.length > 1 && (
+                        <TouchableOpacity style={styles.suggestButton} onPress={() => setImagePickerVisible(true)}>
+                            <Ionicons name="images-outline" size={16} color={colors.text} />
+                        </TouchableOpacity>
                     )}
                 </View>
 
@@ -339,65 +363,90 @@ const MiniPlayer: React.FC = () => {
                         </Text>
                     </View>
                 </View>
-
-                <View style={styles.controls}>
-                    {/* Soundbar / Output Button */}
-                    <TouchableOpacity onPress={openRouting} style={styles.routingButton}>
-                        {/* Animated soundbar icon */}
-                        <View style={styles.soundbarContainer}>
-                            <Animated.View style={[styles.bar, { transform: [{ scaleY: barAnim1 }] }]} />
-                            <Animated.View style={[styles.bar, { transform: [{ scaleY: barAnim2 }], marginHorizontal: 3 }]} />
-                            <Animated.View style={[styles.bar, { transform: [{ scaleY: barAnim3 }] }]} />
-                        </View>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity onPress={previousSong} style={styles.controlButton}>
-                        <Ionicons name="play-skip-back" size={20} color={colors.text} />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                        onPress={handlePlayPause}
-                        style={[styles.playButton, { backgroundColor: accentColor }]}
-                    >
-                        <Ionicons
-                            name={isPlaying ? 'pause' : 'play'}
-                            size={24}
-                            color={colors.text}
-                        />
-                    </TouchableOpacity>
-
-                    <TouchableOpacity onPress={nextSong} style={styles.controlButton}>
-                        <Ionicons name="play-skip-forward" size={20} color={colors.text} />
-                    </TouchableOpacity>
-                </View>
             </View>
 
-            {/* Routing Modal */}
-            <Modal visible={routingModalVisible} animationType="slide" transparent>
-                <View style={styles.modalOverlay}>
-                    <View style={styles.modalContent}>
-                        <Text style={styles.modalTitle}>Play To</Text>
-                        {outputsLoading ? (
-                            <ActivityIndicator />
-                        ) : (
+            <View style={styles.controls}>
+                <TouchableOpacity onPress={previousSong} style={styles.controlButton}>
+                    <Ionicons name="play-skip-back" size={22} color={colors.text} />
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={handlePlayPause} style={styles.playButton}>
+                    {isPlaying ? (
+                        <View style={styles.soundbarContainer}>
+                            <Animated.View style={[styles.bar, { transform: [{ scaleY: barAnim1 }], marginHorizontal: 1 }]} />
+                            <Animated.View style={[styles.bar, { transform: [{ scaleY: barAnim2 }], marginHorizontal: 1 }]} />
+                            <Animated.View style={[styles.bar, { transform: [{ scaleY: barAnim3 }], marginHorizontal: 1 }]} />
+                        </View>
+                    ) : (
+                        <Ionicons name="play" size={26} color={accentColor} />
+                    )}
+                </TouchableOpacity>
+
+                <TouchableOpacity onPress={nextSong} style={styles.controlButton}>
+                    <Ionicons name="play-skip-forward" size={22} color={colors.text} />
+                </TouchableOpacity>
+
+                {/* Audio Output Button */}
+                <TouchableOpacity onPress={() => setShowAudioModal(true)} style={styles.routingButton}>
+                    <Ionicons name="volume-high" size={22} color={colors.text} />
+                </TouchableOpacity>
+            </View>
+
+            {/* Audio Output Modal */}
+            <AudioOutputModal
+                visible={showAudioModal}
+                onClose={() => setShowAudioModal(false)}
+            />
+
+            {/* Image suggestion picker modal */}
+            {imagePickerVisible && (
+                <TouchableWithoutFeedback onPress={() => setImagePickerVisible(false)}>
+                    <View style={styles.pickerOverlay} pointerEvents="box-none">
+                        <View
+                            style={[
+                                styles.pickerContent,
+                                {
+                                    backgroundColor: dynamicColors
+                                        ? hexToRgba(dynamicColors.background, 0.98)
+                                        : 'rgba(10,0,20,0.98)',
+                                },
+                            ]}
+                        >
+                            <Text style={styles.modalTitle}>Choose Artwork</Text>
                             <FlatList
-                                data={outputs}
-                                keyExtractor={(item) => item.id}
+                                data={searchResults}
+                                horizontal
+                                keyExtractor={(i) => i}
                                 renderItem={({ item }) => (
-                                    <TouchableOpacity style={styles.outputRow} onPress={() => handleSelectOutput(item)} disabled={selectingOutput}>
-                                        <Text style={styles.outputName}>{item.name}</Text>
-                                        {selectedOutput === item.id && <Text style={styles.outputSelected}>(selected)</Text>}
+                                    <TouchableOpacity
+                                        style={styles.pickerItem}
+                                        onPress={async () => {
+                                            setThumbnailUrl(item);
+                                            try {
+                                                const colors = await extractColorsFromImage(item);
+                                                setDynamicColors(colors);
+                                            } catch (e) {
+                                                setDynamicColors(null);
+                                            }
+                                            setImagePickerVisible(false);
+                                        }}
+                                    >
+                                        <ImageWithLoader
+                                            source={{ uri: item }}
+                                            defaultSource={images.placeholder}
+                                            style={styles.pickerImage}
+                                            resizeMode="cover"
+                                        />
                                     </TouchableOpacity>
                                 )}
                             />
-                        )}
-
-                        <TouchableOpacity style={styles.modalClose} onPress={() => setRoutingModalVisible(false)}>
-                            <Text style={{ color: colors.accent }}>Close</Text>
-                        </TouchableOpacity>
+                            <TouchableOpacity onPress={() => setImagePickerVisible(false)} style={styles.pickerClose}>
+                                <Text style={{ color: colors.accent }}>Close</Text>
+                            </TouchableOpacity>
+                        </View>
                     </View>
-                </View>
-            </Modal>
+                </TouchableWithoutFeedback>
+            )}
         </Animated.View>
     );
 };
@@ -409,66 +458,51 @@ const styles = StyleSheet.create({
         left: 0,
         right: 0,
         backgroundColor: 'rgba(10, 0, 20, 0.98)',
-        paddingTop: 0,
-        paddingBottom: 0,
         zIndex: 9999,
         elevation: 9999,
         overflow: 'visible',
         borderTopWidth: 1,
-        borderTopColor: 'rgba(255, 255, 255, 0.05)',
+        borderTopColor: 'rgba(255,255,255,0.04)',
     },
     progressBarContainer: {
         width: '100%',
-        height: 3,
-        justifyContent: 'flex-start',
-        paddingHorizontal: 0,
-        zIndex: 10000,
+        height: 4,
         position: 'absolute',
         top: 0,
         left: 0,
         right: 0,
-        pointerEvents: 'auto',
+        zIndex: 10000,
     },
     progressBarTrack: {
-        height: 3,
+        height: 4,
         width: '100%',
-        backgroundColor: 'rgba(255, 255, 255, 0.08)',
+        backgroundColor: 'rgba(255,255,255,0.06)',
         position: 'relative',
     },
     progressBarFill: {
         height: '100%',
         backgroundColor: colors.accent,
-        borderRadius: 0,
-        shadowColor: colors.accent,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.6,
-        shadowRadius: 4,
     },
     progressHandle: {
         position: 'absolute',
         top: '50%',
-        marginTop: -5,
-        marginLeft: -5,
-        width: 10,
-        height: 10,
-        borderRadius: 5,
+        marginTop: -6,
+        marginLeft: -6,
+        width: 12,
+        height: 12,
+        borderRadius: 12,
         backgroundColor: colors.accent,
-        shadowColor: colors.accent,
-        shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: 6,
-        elevation: 5,
+        elevation: 6,
     },
     ambientGlowCenter: {
         position: 'absolute',
-        top: -40,
+        top: -36,
         left: '20%',
         right: '20%',
-        height: 120,
+        height: 110,
         borderRadius: 60,
         zIndex: -3,
-        transform: [{ scaleX: 2.5 }],
-        opacity: 0.25,
+        transform: [{ scaleX: 2 }],
     },
     gradientOverlay: {
         position: 'absolute',
@@ -477,44 +511,71 @@ const styles = StyleSheet.create({
         right: 0,
         bottom: 0,
         zIndex: -2,
-        opacity: 0.3,
     },
     playerContent: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: spacing.lg,
-        paddingTop: 18,
-        paddingBottom: spacing.md,
+        paddingHorizontal: spacing.md,
+        paddingTop: 12,
+        paddingBottom: spacing.sm,
         gap: spacing.md,
     },
-    thumbnailWrapper: {
-        position: 'relative',
-    },
-    thumbnail: {
-        width: 52,
-        height: 52,
-        borderRadius: 8,
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
-    },
+    thumbnailWrapper: { position: 'relative' },
+    thumbnail: { backgroundColor: 'rgba(255,255,255,0.03)' },
     thumbnailGlow: {
         position: 'absolute',
         top: -3,
         left: -3,
         right: -3,
         bottom: -3,
-        borderRadius: 11,
+        borderRadius: 12,
         zIndex: -1,
         opacity: 0.4,
     },
-    songInfo: {
-        flex: 1,
+    suggestButton: {
+        position: 'absolute',
+        right: -6,
+        bottom: -6,
+        width: 28,
+        height: 28,
+        borderRadius: 14,
+        backgroundColor: 'rgba(255,255,255,0.06)',
+        justifyContent: 'center',
+        alignItems: 'center',
+        elevation: 6,
     },
+    pickerOverlay: {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        top: 0,
+        bottom: 0,
+        justifyContent: 'flex-end',
+        alignItems: 'center',
+    },
+    pickerContent: {
+        width: '96%',
+        padding: spacing.md,
+        borderRadius: 12,
+        marginBottom: 92,
+    },
+    pickerItem: {
+        marginRight: spacing.sm,
+        width: 96,
+        height: 96,
+        borderRadius: 8,
+        overflow: 'hidden',
+    },
+    pickerImage: { width: '100%', height: '100%' },
+    pickerClose: { marginTop: spacing.sm, alignSelf: 'flex-end' },
+    songInfo: { flex: 1 },
     title: {
         color: colors.text,
         fontWeight: '600',
         fontSize: 15,
         marginBottom: 3,
         letterSpacing: 0.3,
+        flexShrink: 1,
     },
     artistRow: {
         flexDirection: 'row',
@@ -525,22 +586,32 @@ const styles = StyleSheet.create({
         color: colors.textSecondary,
         fontSize: 13,
         flex: 1,
-        opacity: 0.7,
+        opacity: 0.8,
+        marginRight: spacing.sm,
     },
     timeDisplay: {
         fontSize: 11,
-        color: 'rgba(255, 255, 255, 0.4)',
+        color: 'rgba(255,255,255,0.45)',
         marginLeft: spacing.sm,
-        fontVariant: ['tabular-nums'],
     },
     controls: {
         flexDirection: 'row',
         alignItems: 'center',
-        paddingHorizontal: spacing.lg,
-        paddingTop: 18,
+        paddingHorizontal: spacing.md,
+        paddingTop: 8,
+    },
+    controlButton: {
+        paddingHorizontal: spacing.sm,
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    playButton: {
+        justifyContent: 'center',
+        alignItems: 'center',
+        marginHorizontal: spacing.sm,
     },
     routingButton: {
-        paddingRight: spacing.md,
+        paddingLeft: spacing.md,
         justifyContent: 'center',
         alignItems: 'center',
     },
@@ -556,38 +627,13 @@ const styles = StyleSheet.create({
         height: 12,
         backgroundColor: colors.text,
         borderRadius: 2,
-        transform: [{ scaleY: 0.5 }],
-    },
-    modalOverlay: {
-        flex: 1,
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        justifyContent: 'center',
-        alignItems: 'center',
-        padding: spacing.lg,
-    },
-    modalContent: {
-        width: '100%',
-        maxWidth: 420,
-        backgroundColor: 'rgba(10,0,20,0.95)',
-        borderRadius: 12,
-        padding: spacing.md,
+        transform: [{ scaleY: 0.6 }],
     },
     modalTitle: {
         color: colors.text,
         fontWeight: '700',
         marginBottom: spacing.sm,
     },
-    outputRow: {
-        paddingVertical: spacing.sm,
-        borderBottomWidth: 1,
-        borderBottomColor: 'rgba(255,255,255,0.03)',
-        flexDirection: 'row',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-    },
-    outputName: { color: colors.text },
-    outputSelected: { color: colors.accent },
-    modalClose: { marginTop: spacing.sm, alignSelf: 'flex-end' },
 });
 
 export default MiniPlayer;

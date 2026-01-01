@@ -154,7 +154,10 @@ const UploadScreen: React.FC = () => {
             const extMatch = imageUrl.match(/\.([a-zA-Z0-9]{3,4})(?:\?|$)/);
             const ext = extMatch ? extMatch[1] : 'jpg';
             const filename = `thumb-${ts}.${ext}`;
-            const fileUri = `${FileSystem.cacheDirectory}${filename}`;
+            // Type definitions for expo-file-system may not expose cacheDirectory in this project setup
+            // use a safe fallback to documentDirectory and cast FileSystem to any to access cacheDirectory if available
+            const cacheDir = (FileSystem as any).cacheDirectory || '';
+            const fileUri = `${cacheDir}${filename}`;
 
             const downloadRes = await FileSystem.downloadAsync(imageUrl, fileUri);
             if (downloadRes && downloadRes.status !== 200 && !downloadRes?.uri) {

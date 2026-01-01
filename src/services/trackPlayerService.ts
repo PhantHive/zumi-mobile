@@ -7,22 +7,18 @@ import TrackPlayer, {
     AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
 
+import { resizeArtworkForTrackPlayer } from '../utils/imageUtils';
+
 class TrackPlayerService {
     private isInitialized = false;
 
     async initialize() {
-        if (this.isInitialized) {
-            console.log('🎵 TrackPlayer already initialized');
-            return;
-        }
+        if (this.isInitialized) return;
 
         try {
-            console.log('🎵 Setting up TrackPlayer...');
+            console.log('🎵 Initializing TrackPlayer...');
 
-            await TrackPlayer.setupPlayer({
-                autoUpdateMetadata: true,
-                autoHandleInterruptions: true,
-            });
+            await TrackPlayer.setupPlayer();
 
             await TrackPlayer.updateOptions({
                 android: {
@@ -46,26 +42,90 @@ class TrackPlayerService {
             await TrackPlayer.setRepeatMode(RepeatMode.Off);
 
             this.isInitialized = true;
-            console.log('✅ TrackPlayer initialized successfully');
-        } catch (error) {
-            console.error('❌ Error initializing TrackPlayer:', error);
-            throw error;
+            console.log('✅ TrackPlayer initialized');
+        } catch (e) {
+            console.error('❌ TrackPlayer init error:', e);
+            throw e;
         }
     }
 
+    /**
+     * Adds a single track (object) after preparing artwork and plays it.
+     */
     async addAndPlay(track: any) {
+        if (!track) throw new Error('Track is required');
+
+        if (!this.isInitialized) await this.initialize();
+
         try {
-            if (!this.isInitialized) {
-                console.log('⚠️ TrackPlayer not initialized, initializing now...');
-                await this.initialize();
+            console.log('🎧 addAndPlay called with track:', track);
+
+            if (!track.url && !track.uri) {
+                console.warn('⚠️ track missing url/uri field, TrackPlayer may fail:', track);
             }
+
+            // Prepare artwork safely
+            if (track.artwork) {
+                try {
+                    const safeArtwork = await resizeArtworkForTrackPlayer(track.artwork);
+                    if (safeArtwork) {
+                        track.artwork = safeArtwork;
+                        console.log('🖼️ Artwork prepared for track:', safeArtwork);
+                    } else {
+                        console.warn('⚠️ Artwork processing returned undefined — removing artwork');
+                        delete track.artwork;
+                    }
+                } catch (artErr) {
+                    console.warn('⚠️ Error processing artwork — removing artwork to avoid crash:', artErr);
+                    delete track.artwork;
+                }
+            }
+
+            console.log('📝 Resetting player and adding track...');
             await TrackPlayer.reset();
             await TrackPlayer.add(track);
+            console.log('▶️ Starting playback...');
             await TrackPlayer.play();
-        } catch (error) {
-            console.error('❌ Error adding and playing track:', error);
-            throw error;
+
+            try {
+                const state = await TrackPlayer.getState();
+                console.log('ℹ️ TrackPlayer state after play:', state);
+            } catch (sErr) {
+                console.warn('⚠️ Could not read TrackPlayer state:', sErr);
+            }
+        } catch (e) {
+            console.error('❌ addAndPlay error:', e);
+            throw e;
         }
+    }
+
+    async addTracks(tracks: any[]) {
+        if (!this.isInitialized) await this.initialize();
+        if (!Array.isArray(tracks)) return;
+
+        console.log('🎧 addTracks called with', tracks.length, 'tracks');
+
+        const prepared: any[] = [];
+
+        for (const t of tracks) {
+            const copy = { ...t };
+            if (copy.artwork) {
+                try {
+                    const safeArtwork = await resizeArtworkForTrackPlayer(copy.artwork);
+                    if (safeArtwork) copy.artwork = safeArtwork;
+                    else delete copy.artwork;
+                } catch (e) {
+                    delete copy.artwork;
+                }
+            }
+            if (!copy.url && !copy.uri) {
+                console.warn('⚠️ one of the tracks is missing url/uri:', copy);
+            }
+            prepared.push(copy);
+        }
+
+        console.log('🗂️ Adding prepared tracks to TrackPlayer:', prepared);
+        await TrackPlayer.add(prepared);
     }
 
     async play() {
@@ -107,42 +167,126 @@ class TrackPlayerService {
         if (!this.isInitialized) return 0;
         return await TrackPlayer.getDuration();
     }
+
+    /**
+     * Force audio system to pick up new route by pause/resume
+     * CRITICAL for audio routing to work on Android!
+     */
+    async reattachAfterRouting(delayMs = 200) {
+        try {
+            console.log('🔄 Reattaching audio after routing change...');
+
+            const state = await this.getState();
+
+            if (state === State.Playing) {
+                // Get current position
+                const position = await this.getPosition();
+
+                // Pause
+                await TrackPlayer.pause();
+                console.log('⏸️ Paused');
+
+                // Wait for audio system to switch
+                await new Promise(res => setTimeout(res, delayMs));
+
+                // Resume from same position
+                await TrackPlayer.seekTo(position);
+                await TrackPlayer.play();
+                console.log('▶️ Resumed');
+
+                console.log('✅ Audio reattached successfully');
+            } else {
+                console.log('ℹ️ Not playing, no reattach needed');
+            }
+        } catch (e) {
+            console.warn('⚠️ reattachAfterRouting failed:', e);
+        }
+    }
 }
 
 export const trackPlayerService = new TrackPlayerService();
 
-// ⚠️ CRITIQUE: Cette fonction DOIT retourner une fonction async!
 // Playback service for react-native-track-player
 export async function PlaybackService() {
     console.log('🎵 PlaybackService registered');
 
-    TrackPlayer.addEventListener(Event.RemotePlay, async () => {
-        console.log('▶️ Remote Play');
-        await TrackPlayer.play();
-    });
+    const subscriptions: Array<{ remove: () => void } | (() => void) | any> = [];
 
-    TrackPlayer.addEventListener(Event.RemotePause, async () => {
-        console.log('⏸️ Remote Pause');
-        await TrackPlayer.pause();
-    });
+    subscriptions.push(
+        TrackPlayer.addEventListener(Event.RemotePlay, async () => {
+            console.log('▶️ RemotePlay');
+            await TrackPlayer.play();
+        })
+    );
 
-    TrackPlayer.addEventListener(Event.RemoteNext, async () => {
-        console.log('⏭️ Remote Next');
-        await TrackPlayer.skipToNext();
-    });
+    subscriptions.push(
+        TrackPlayer.addEventListener(Event.RemotePause, async () => {
+            console.log('⏸️ RemotePause');
+            await TrackPlayer.pause();
+        })
+    );
 
-    TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
-        console.log('⏮️ Remote Previous');
-        await TrackPlayer.skipToPrevious();
-    });
+    subscriptions.push(
+        TrackPlayer.addEventListener(Event.RemoteNext, async () => {
+            console.log('⏭️ RemoteNext');
+            try {
+                await TrackPlayer.skipToNext();
+            } catch (e) {
+                console.warn('⚠️ skipToNext failed:', e);
+            }
+        })
+    );
 
-    TrackPlayer.addEventListener(Event.RemoteSeek, async ({ position }) => {
-        console.log('⏩ Remote Seek to:', position);
-        await TrackPlayer.seekTo(position);
-    });
+    subscriptions.push(
+        TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
+            console.log('⏮️ RemotePrevious');
+            try {
+                await TrackPlayer.skipToPrevious();
+            } catch (e) {
+                console.warn('⚠️ skipToPrevious failed:', e);
+            }
+        })
+    );
 
-    TrackPlayer.addEventListener(Event.RemoteStop, async () => {
-        console.log('⏹️ Remote Stop');
-        await TrackPlayer.pause();
-    });
+    subscriptions.push(
+        TrackPlayer.addEventListener(Event.RemoteSeek, async ({ position }) => {
+            console.log('⏩ RemoteSeek to', position);
+            await TrackPlayer.seekTo(position);
+        })
+    );
+
+    subscriptions.push(
+        TrackPlayer.addEventListener(Event.RemoteStop, async () => {
+            console.log('⏹️ RemoteStop');
+            try {
+                await TrackPlayer.reset();
+            } catch (e) {
+                console.warn('⚠️ reset failed:', e);
+                await TrackPlayer.pause();
+            }
+        })
+    );
+
+    subscriptions.push(
+        TrackPlayer.addEventListener(Event.PlaybackError, (err) => {
+            console.error('❌ PlaybackError event:', err);
+        })
+    );
+
+    subscriptions.push(
+        TrackPlayer.addEventListener(Event.RemoteDuck, async (data) => {
+            console.log('🔈 RemoteDuck', data);
+            try {
+                if (data.paused) {
+                    await TrackPlayer.pause();
+                } else {
+                    await TrackPlayer.play();
+                }
+            } catch (e) {
+                console.warn('⚠️ RemoteDuck handling failed:', e);
+            }
+        })
+    );
+
+    return;
 }

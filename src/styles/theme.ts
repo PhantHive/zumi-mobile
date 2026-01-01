@@ -29,7 +29,7 @@ export const colors = {
 };
 
 // Album color variations based on artist/genre
-export const albumColors = [
+export const albumColors: [string, string][] = [
     ['rgba(255, 105, 180, 0.15)', '#ff69b4'], // Pink
     ['rgba(181, 101, 216, 0.15)', '#b565d8'], // Purple
     ['rgba(110, 197, 255, 0.15)', '#6ec5ff'], // Blue

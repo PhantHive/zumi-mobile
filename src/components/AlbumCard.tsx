@@ -22,10 +22,9 @@ interface AlbumCardProps {
 }
 
 const AlbumCard: React.FC<AlbumCardProps> = ({ album }) => {
-    const { currentSong } = useMusic();
-    const [albumColors, setAlbumColors] = useState<ExtractedColors | null>(null);
-    const [albumCoverUrl, setAlbumCoverUrl] = useState<string | null>(null);
-    const [isExpanded, setIsExpanded] = useState(true);
+     const [albumColors, setAlbumColors] = useState<ExtractedColors | null>(null);
+     const [albumCoverUrl, setAlbumCoverUrl] = useState<string | null>(null);
+     const [isExpanded, setIsExpanded] = useState(true);
 
     useEffect(() => {
         const loadThumbnailAndColors = async () => {
@@ -89,6 +88,7 @@ const AlbumCard: React.FC<AlbumCardProps> = ({ album }) => {
                     <ImageWithLoader
                         source={albumCoverUrl ? { uri: albumCoverUrl } : images.placeholder}
                         defaultSource={images.placeholder}
+                        containerStyle={styles.coverImageContainer}
                         style={styles.albumCover}
                         resizeMode="cover"
                     />
@@ -157,6 +157,7 @@ const SongCard: React.FC<{ song: Song; accentColor: string }> = ({ song, accentC
             <ImageWithLoader
                 source={thumbnailUrl ? { uri: thumbnailUrl } : images.placeholder}
                 defaultSource={images.placeholder}
+                containerStyle={styles.songThumbnailContainer}
                 style={styles.songThumbnail}
                 resizeMode="cover"
             />
@@ -210,7 +211,7 @@ const styles = StyleSheet.create({
     },
     coverWrapper: {
         borderRadius: 8,
-        overflow: 'visible',
+        overflow: 'hidden', // ensure image is clipped to rounded corners
         width: 72,
         height: 72,
         position: 'relative',
@@ -254,15 +255,19 @@ const styles = StyleSheet.create({
         flexWrap: 'wrap',
         gap: spacing.sm,
         marginTop: spacing.sm,
+        justifyContent: 'space-between',
     },
     songCard: {
-        width: '48%',
+        flexBasis: '48%',
         backgroundColor: 'rgba(255, 255, 255, 0.03)',
         borderRadius: 10,
         padding: spacing.sm,
         position: 'relative',
         borderWidth: 1,
         borderColor: 'rgba(255, 255, 255, 0.05)',
+        alignItems: 'stretch',
+        // ensure consistent height so grid items align
+        marginBottom: spacing.sm,
     },
     songThumbnail: {
         width: '100%',
@@ -270,6 +275,15 @@ const styles = StyleSheet.create({
         borderRadius: 6,
         marginBottom: spacing.xs,
         backgroundColor: 'rgba(255, 255, 255, 0.02)',
+        overflow: 'hidden',
+    },
+    songThumbnailContainer: {
+        width: '100%',
+        // let the inner image's aspectRatio determine height
+    },
+    coverImageContainer: {
+        width: '100%',
+        height: '100%',
     },
     playingIndicator: {
         position: 'absolute',
@@ -298,4 +312,3 @@ const styles = StyleSheet.create({
 });
 
 export default AlbumCard;
-

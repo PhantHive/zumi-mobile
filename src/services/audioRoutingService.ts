@@ -1,95 +1,78 @@
 // src/services/audioRoutingService.ts
-import { Platform, Linking, Alert } from 'react-native';
-import * as Audio from 'expo-av';
+import { Platform, NativeModules } from 'react-native';
+import { trackPlayerService } from './trackPlayerService';
 
-export type AudioOutput = {
-    id: string;
-    name: string;
-    description?: string;
-    connected?: boolean;
-};
+const { AudioManagerModule } = NativeModules;
 
 /**
- * Return a list of likely audio outputs. This is a best-effort client-side implementation.
- * Native modules can replace this implementation later to list exact paired devices.
+ * Switch audio to phone speaker
+ *
+ * KEY INSIGHT: Media audio (music) automatically routes to Bluetooth.
+ * To force phone speaker, we need to switch to COMMUNICATION mode.
  */
-export async function getAvailableOutputs(): Promise<AudioOutput[]> {
-    const outputs: AudioOutput[] = [
-        { id: 'system', name: 'Phone speaker' },
-    ];
-
-    // Bluetooth option (system-managed)
-    outputs.push({ id: 'bluetooth', name: 'Bluetooth (system)' });
-
-    // AirPlay on iOS
-    if (Platform.OS === 'ios') {
-        outputs.push({ id: 'airplay', name: 'AirPlay' });
-    }
-
-    // Add a generic 'Cast / Smart Speaker' option for devices like Alexa/Echo
-    outputs.push({ id: 'cast', name: 'Smart Speaker / Cast' });
-
-    return outputs;
-}
-
-/**
- * Select an output. Full device-level routing requires native platform support and
- * pairing — here we attempt a best-effort behavior:
- * - For bluetooth/airplay/cast we open the system settings so the user can connect
- * - We enable Bluetooth A2DP audio on the JS side where possible via expo-av
- */
-export async function selectOutput(outputId: string): Promise<void> {
+export async function routeToPhoneSpeaker(): Promise<void> {
     try {
-        if (outputId === 'system') {
-            // Ensure audio plays through device speaker: allow Bluetooth A2DP false
-            await Audio.setAudioModeAsync({ allowsBluetoothA2DP: false as any, playsInSilentModeIOS: true });
-            return;
+        if (Platform.OS === 'android' && AudioManagerModule) {
+            console.log('📱 Routing to phone speaker...');
+
+            // CRITICAL: Switch to IN_COMMUNICATION mode
+            // This makes audio behave like a phone call, which respects speakerphone!
+            await AudioManagerModule.setMode('IN_COMMUNICATION');
+
+            // Now turn ON speakerphone
+            await AudioManagerModule.setSpeakerphoneOn(true);
+
+            // Restart playback to pick up new audio session
+            await trackPlayerService.reattachAfterRouting(200);
+
+            console.log('✅ Routed to phone speaker (COMMUNICATION mode)');
+        } else {
+            console.warn('⚠️ AudioManagerModule not available');
         }
-
-        if (outputId === 'bluetooth') {
-            // Enable A2DP so audio may route to paired bluetooth devices
-            try {
-                await Audio.setAudioModeAsync({ allowsBluetoothA2DP: true as any, playsInSilentModeIOS: true });
-            } catch (e) {
-                // ignore - best-effort
-            }
-
-            // Open system settings to let user choose or connect a BT device
-            Alert.alert(
-                'Route audio to Bluetooth',
-                'Please open your system Bluetooth settings and select the paired device (e.g. earbuds, speaker, Echo). After connecting, audio should play through the device.',
-                [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Open Settings', onPress: () => Linking.openSettings() }
-                ]
-            );
-            return;
-        }
-
-        if (outputId === 'airplay') {
-            // On iOS, users can open Control Center to pick AirPlay. We provide a hint.
-            Alert.alert(
-                'AirPlay / Output',
-                'Use Control Center to select an AirPlay destination (or open Bluetooth in Settings).',
-                [{ text: 'OK' }]
-            );
-            return;
-        }
-
-        if (outputId === 'cast') {
-            Alert.alert(
-                'Smart Speaker / Cast',
-                'To stream to smart speakers (Alexa, Google Home), ensure the speaker is on the same network and supports streaming. Use the device app (Amazon Alexa / Google Home) to enable music playback from this device, or use Bluetooth in Settings.',
-                [{ text: 'OK' }]
-            );
-            return;
-        }
-
-        // fallback
-        Alert.alert('Output', 'Selected output: ' + outputId);
     } catch (error) {
-        console.warn('selectOutput error', error);
-        throw error;
+        console.error('❌ Failed to route to phone speaker:', error);
     }
 }
 
+/**
+ * Switch audio to Bluetooth
+ *
+ * Restore NORMAL mode so media audio routes to Bluetooth automatically.
+ */
+export async function routeToBluetooth(): Promise<void> {
+    try {
+        if (Platform.OS === 'android' && AudioManagerModule) {
+            console.log('🔵 Routing to Bluetooth...');
+
+            // Switch back to NORMAL media mode
+            await AudioManagerModule.setMode('NORMAL');
+
+            // Turn OFF speakerphone (not needed in NORMAL mode, but good practice)
+            await AudioManagerModule.setSpeakerphoneOn(false);
+
+            // Restart playback to pick up Bluetooth route
+            await trackPlayerService.reattachAfterRouting(200);
+
+            console.log('✅ Routed to Bluetooth (NORMAL mode)');
+        } else {
+            console.warn('⚠️ AudioManagerModule not available');
+        }
+    } catch (error) {
+        console.error('❌ Failed to route to Bluetooth:', error);
+    }
+}
+
+/**
+ * Check if currently on speakerphone
+ */
+export async function isSpeakerphoneOn(): Promise<boolean> {
+    try {
+        if (Platform.OS === 'android' && AudioManagerModule) {
+            return await AudioManagerModule.isSpeakerphoneOn();
+        }
+        return false;
+    } catch (error) {
+        console.error('❌ Failed to check speakerphone status:', error);
+        return false;
+    }
+}

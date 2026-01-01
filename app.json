@@ -37,7 +37,10 @@
         "FOREGROUND_SERVICE",
         "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "POST_NOTIFICATIONS",
-        "WAKE_LOCK"
+        "WAKE_LOCK",
+	      "BLUETOOTH",
+	      "BLUETOOTH_ADMIN",
+	      "BLUETOOTH_CONNECT"
       ],
       "splash": {
         "image": "./assets/splash-icon.png",

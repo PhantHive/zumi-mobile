@@ -255,11 +255,11 @@ const SettingsScreen: React.FC = () => {
                 <UpdateModal
                     visible={updateModalVisible}
                     updateInfo={updateInfo}
-                    onUpdate={async () => {
+                    onClose={() => setUpdateModalVisible(false)}
+                    onUpdateComplete={async () => {
+                        // when update finishes, close modal
                         setUpdateModalVisible(false);
-                        await downloadAndInstallUpdate(updateInfo.downloadUrl);
                     }}
-                    onDismiss={() => setUpdateModalVisible(false)}
                 />
             )}
         </ScrollView>

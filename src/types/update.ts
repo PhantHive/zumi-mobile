@@ -9,3 +9,13 @@ export interface UpdateInfo {
     releaseDate: string;
 }
 
+export interface UpdateCheckResult {
+    hasUpdate: boolean;
+    updateInfo: UpdateInfo | null;
+}
+
+export interface DownloadProgress {
+    totalBytes: number;
+    downloadedBytes: number;
+    progress: number; // 0-100
+}

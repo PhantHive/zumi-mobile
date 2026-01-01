@@ -6,9 +6,9 @@ import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 import { UpdateInfo, UpdateCheckResult, DownloadProgress } from '../types/update';
 import { isNewerVersion } from '../utils/version';
-import { API_URL } from '../config/env';
+import env from '../config/env';
 
-const UPDATE_CHECK_URL = `${API_URL}/mobile/version`;
+const UPDATE_CHECK_URL = `${env.api.baseUrl}/mobile/version`;
 
 /**
  * Get current app version from Constants or package.json
@@ -92,7 +92,8 @@ export const downloadAndInstallUpdate = async (
         }
 
         const fileName = `zumi-update-${Date.now()}.apk`;
-        const fileUri = `${FileSystem.cacheDirectory}${fileName}`;
+        const cacheDir = (FileSystem as any).cacheDirectory || '';
+        const fileUri = `${cacheDir}${fileName}`;
 
         console.log('Downloading update from:', downloadUrl);
         console.log('Saving to:', fileUri);
@@ -171,7 +172,7 @@ const installApk = async (fileUri: string): Promise<void> => {
  */
 export const cleanupOldUpdates = async (): Promise<void> => {
     try {
-        const cacheDir = FileSystem.cacheDirectory;
+        const cacheDir = (FileSystem as any).cacheDirectory;
         if (!cacheDir) return;
 
         const files = await FileSystem.readDirectoryAsync(cacheDir);

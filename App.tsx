@@ -31,11 +31,7 @@ export default function App() {
         config: {
             screens: {},
         },
-        // Filter function to prevent navigation from handling auth links
-        getPathFromState: (state: any, config: any) => {
-            // Let React Navigation handle normal deep links
-            return null;
-        },
+        // No custom getPathFromState — use default behavior
     };
 
     // Check for updates on app launch

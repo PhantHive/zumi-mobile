@@ -1,14 +1,14 @@
 // src/components/ImageWithLoader.tsx
 import React, { useState, useRef, useEffect } from 'react';
-import { View, Image, StyleSheet, Animated, ImageSourcePropType, ImageURISource, ImageStyle, ViewStyle } from 'react-native';
+import { View, Image, StyleSheet, Animated, ImageSourcePropType, ImageURISource, ImageStyle, ViewStyle, StyleProp } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { colors } from '../styles/theme';
 
 interface ImageWithLoaderProps {
     source: ImageSourcePropType;
-    defaultSource?: number | ImageURISource; // Fix: Use correct type for defaultSource
-    style?: ImageStyle;
-    containerStyle?: ViewStyle;
+    defaultSource?: number | ImageURISource; // native image resource id or uri
+    // image style only - ensures compatibility with <Image>
+    style?: StyleProp<ImageStyle>;
+    containerStyle?: StyleProp<ViewStyle>;
     resizeMode?: 'cover' | 'contain' | 'stretch' | 'repeat' | 'center';
     onLoadEnd?: () => void;
 }
@@ -77,7 +77,7 @@ const ImageWithLoader: React.FC<ImageWithLoaderProps> = ({
     });
 
     return (
-        <View style={[styles.container, containerStyle, style]}>
+        <View style={[styles.container, containerStyle]}>
             {/* Loading skeleton - only show while loading and no error */}
             {isLoading && !hasError && (
                 <View style={[styles.skeleton, StyleSheet.absoluteFillObject]}>
@@ -113,8 +113,8 @@ const ImageWithLoader: React.FC<ImageWithLoaderProps> = ({
                 </View>
             )}
 
-            {/* Actual image - always rendered to maintain layout */}
-            <Animated.View style={{ opacity: fadeAnim, width: '100%', height: '100%' }}>
+            {/* Actual image - always rendered to maintain layout. Let the Image control sizing via its style (aspectRatio or explicit height). */}
+            <Animated.View style={{ opacity: fadeAnim }}>
                 <Image
                     source={source}
                     defaultSource={defaultSource}
@@ -134,10 +134,14 @@ const styles = StyleSheet.create({
         position: 'relative',
         overflow: 'hidden',
         backgroundColor: 'rgba(255, 255, 255, 0.05)',
+        // Ensure the component fills available width but do not force height — let child Image's aspectRatio determine height
+        width: '100%',
+        alignSelf: 'stretch',
     },
     image: {
         width: '100%',
-        height: '100%',
+        // Don't force a height here. Let callers provide aspectRatio or explicit height.
+        height: undefined,
     },
     skeleton: {
         backgroundColor: 'rgba(255, 255, 255, 0.05)',
