@@ -9,6 +9,8 @@ import { useAuth } from './AuthContext';
 import { trackPlayerService } from '../services/trackPlayerService';
 import { PermissionService } from '../services/permissionService';
 import { resizeArtworkForTrackPlayer } from '../utils/imageUtils';
+import { setPlaybackCallbacks } from '@services/playbackHandler';
+
 
 interface Album {
     id: string;
@@ -50,6 +52,75 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
     const trackPlayerInitialized = React.useRef(false);
     const { user } = useAuth();
 
+    const albumsRef = React.useRef<Album[]>(albums);
+    const currentSongRef = React.useRef<Song | null>(currentSong);
+
+    React.useEffect(() => {
+        albumsRef.current = albums;
+    }, [albums]);
+
+    React.useEffect(() => {
+        currentSongRef.current = currentSong;
+    }, [currentSong]);
+
+    const nextSong = () => {
+        const currentSong = currentSongRef.current;
+        const albums = albumsRef.current;
+
+        if (!currentSong) {
+            console.log('nextSong: no current song');
+            return;
+        }
+
+        const currentAlbum = albums.find(album =>
+            album.songs.some(s => s.id === currentSong.id)
+        );
+
+        if (!currentAlbum || currentAlbum.songs.length === 0) {
+            console.log('nextSong: no album found or empty album');
+            return;
+        }
+
+        const currentIndex = currentAlbum.songs.findIndex(s => s.id === currentSong.id);
+
+        if (currentIndex < currentAlbum.songs.length - 1) {
+            console.log(`nextSong: playing song ${currentIndex + 1}/${currentAlbum.songs.length} from album "${currentAlbum.name}"`);
+            playSong(currentAlbum.songs[currentIndex + 1]);
+        } else {
+            console.log(`nextSong: looping back to first song in album "${currentAlbum.name}"`);
+            playSong(currentAlbum.songs[0]);
+        }
+    };
+
+    const previousSong = () => {
+        const currentSong = currentSongRef.current;
+        const albums = albumsRef.current;
+
+        if (!currentSong) {
+            console.log('previousSong: no current song');
+            return;
+        }
+
+        const currentAlbum = albums.find(album =>
+            album.songs.some(s => s.id === currentSong.id)
+        );
+
+        if (!currentAlbum || currentAlbum.songs.length === 0) {
+            console.log('previousSong: no album found or empty album');
+            return;
+        }
+
+        const currentIndex = currentAlbum.songs.findIndex(s => s.id === currentSong.id);
+
+        if (currentIndex > 0) {
+            console.log(`previousSong: playing song ${currentIndex - 1}/${currentAlbum.songs.length} from album "${currentAlbum.name}"`);
+            playSong(currentAlbum.songs[currentIndex - 1]);
+        } else {
+            console.log(`previousSong: looping to last song in album "${currentAlbum.name}"`);
+            playSong(currentAlbum.songs[currentAlbum.songs.length - 1]);
+        }
+    };
+
     useEffect(() => {
         let mounted = true;
 
@@ -79,23 +150,30 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
 
         const stateListener = TrackPlayer.addEventListener(Event.PlaybackState, async ({ state }) => {
             if (!mounted) return;
-            setIsPlaying(state === State.Playing || state === State.Buffering);
+            const nowPlaying = state === State.Playing || state === State.Buffering;
+            setIsPlaying(nowPlaying);
         });
 
-        const trackEndListener = TrackPlayer.addEventListener(Event.PlaybackTrackChanged, async () => {
+        const queueEndedListener = TrackPlayer.addEventListener(Event.PlaybackQueueEnded, async () => {
             if (!mounted) return;
+            console.log('Queue ended, playing next song...');
             nextSong();
         });
 
         return () => {
             mounted = false;
             stateListener.remove();
-            trackEndListener.remove();
+            queueEndedListener.remove();
             if (positionInterval.current) {
                 clearInterval(positionInterval.current);
             }
         };
     }, []);
+
+    useEffect(() => {
+        console.log('🎮 Registering playback callbacks for remote controls');
+        setPlaybackCallbacks(nextSong, previousSong);
+    }, [albums, currentSong]);
 
     useEffect(() => {
         if (isPlaying) {
@@ -106,7 +184,6 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     setPosition(pos * 1000);
                     setDuration(dur * 1000);
                 } catch (error) {
-                    // Ignore
                 }
             }, 1000);
         } else {
@@ -150,7 +227,6 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 return true;
             });
 
-            // Debug: log sample metadata and counts to help diagnose grouping issues on mobile
             try {
                 const sample = (filteredSongs || []).slice(0, 10).map(s => ({
                     id: s.id,
@@ -176,12 +252,10 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 console.warn('DEBUG: failed to log sample metadata', e);
             }
 
-            // Prefer grouping by albumId if available; otherwise group by genre.
             const groupMap = new Map<string, Song[]>();
             const nameMap = new Map<string, string>();
 
             filteredSongs.forEach((song: Song) => {
-                // Determine grouping key in order: albumId (preferred), album name (readable), then genre
                 const albumId = (song as any).albumId || '';
                 const albumNameField = (song as any).album || '';
                 const genreKey = song.genre || 'Unknown Genre';
@@ -193,7 +267,6 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 }
                 groupMap.get(key)?.push(song);
 
-                // Prefer a friendly display name: albumNameField > albumId > genre
                 if (albumNameField) {
                     nameMap.set(key, albumNameField);
                 } else if (albumId) {
@@ -259,7 +332,6 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             console.log('============ PLAY SONG START ============');
             console.log('Song:', song.title, 'ID:', song.id);
 
-            // Check permissions
             if (!trackPlayerInitialized.current) {
                 console.warn('TrackPlayer not initialized - requesting permissions');
                 const granted = await PermissionService.requestNotificationPermissions();
@@ -293,7 +365,6 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             const audioUrl = apiClient.getStreamUrl(song.id);
             console.log('Audio URL:', audioUrl);
 
-            // Process artwork with detailed logging
             let artworkUrl;
             if (song.thumbnailUrl) {
                 try {
@@ -318,7 +389,6 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                     }
                 } catch (e) {
                     console.error('ERROR processing artwork:', e);
-                    // Continue without artwork
                 }
             } else {
                 console.log('INFO: No thumbnail URL for this song');
@@ -373,30 +443,6 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             setIsPlaying(true);
         } catch (error) {
             console.error('Error resuming:', error);
-        }
-    };
-
-    const nextSong = () => {
-        if (!currentSong) return;
-
-        const allSongs = albums.flatMap(album => album.songs);
-        const currentIndex = allSongs.findIndex(s => s.id === currentSong.id);
-
-        if (currentIndex < allSongs.length - 1) {
-            playSong(allSongs[currentIndex + 1]);
-        } else {
-            playSong(allSongs[0]);
-        }
-    };
-
-    const previousSong = () => {
-        if (!currentSong) return;
-
-        const allSongs = albums.flatMap(album => album.songs);
-        const currentIndex = allSongs.findIndex(s => s.id === currentSong.id);
-
-        if (currentIndex > 0) {
-            playSong(allSongs[currentIndex - 1]);
         }
     };
 

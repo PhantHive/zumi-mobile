@@ -6,6 +6,7 @@ import { AppState, AppStateStatus, Text } from 'react-native';
 import * as SplashScreen from 'expo-splash-screen';
 import { AuthProvider } from './src/contexts/AuthContext';
 import { MusicProvider } from './src/contexts/MusicContext';
+import { CarModeProvider } from './src/contexts/CarModeContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import UpdateModal from './src/components/UpdateModal';
@@ -119,22 +120,24 @@ export default function App() {
         <GestureHandlerRootView style={{ flex: 1 }}>
             <AuthProvider>
                 <MusicProvider>
-                    <NavigationContainer
-                        linking={linking}
-                        fallback={null}
-                        onReady={() => console.log('🎵 Navigation ready')}
-                    >
-                        <AppNavigator />
-                        <StatusBar style="light" />
-                    </NavigationContainer>
+                    <CarModeProvider>
+                        <NavigationContainer
+                            linking={linking}
+                            fallback={null}
+                            onReady={() => console.log('🎵 Navigation ready')}
+                        >
+                            <AppNavigator />
+                            <StatusBar style="light" />
+                        </NavigationContainer>
 
-                    {/* Update Modal - Global overlay */}
-                    <UpdateModal
-                        visible={showUpdateModal}
-                        updateInfo={updateInfo}
-                        onClose={handleCloseUpdateModal}
-                        onUpdateComplete={handleUpdateComplete}
-                    />
+                        {/* Update Modal - Global overlay */}
+                        <UpdateModal
+                            visible={showUpdateModal}
+                            updateInfo={updateInfo}
+                            onClose={handleCloseUpdateModal}
+                            onUpdateComplete={handleUpdateComplete}
+                        />
+                    </CarModeProvider>
                 </MusicProvider>
             </AuthProvider>
         </GestureHandlerRootView>

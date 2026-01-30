@@ -1,4 +1,3 @@
-// src/services/trackPlayerService.ts
 import TrackPlayer, {
     Capability,
     Event,
@@ -6,7 +5,8 @@ import TrackPlayer, {
     RepeatMode,
     AppKilledPlaybackBehavior,
 } from 'react-native-track-player';
-
+import { applyDesiredRoute } from './audioRoutingService';
+import { getNextSongCallback, getPreviousSongCallback } from './playbackService';
 import { resizeArtworkForTrackPlayer } from '../utils/imageUtils';
 
 class TrackPlayerService {
@@ -49,9 +49,6 @@ class TrackPlayerService {
         }
     }
 
-    /**
-     * Adds a single track (object) after preparing artwork and plays it.
-     */
     async addAndPlay(track: any) {
         if (!track) throw new Error('Track is required');
 
@@ -64,7 +61,6 @@ class TrackPlayerService {
                 console.warn('⚠️ track missing url/uri field, TrackPlayer may fail:', track);
             }
 
-            // Prepare artwork safely
             if (track.artwork) {
                 try {
                     const safeArtwork = await resizeArtworkForTrackPlayer(track.artwork);
@@ -81,9 +77,16 @@ class TrackPlayerService {
                 }
             }
 
-            console.log('📝 Resetting player and adding track...');
+            console.log('🔄 Resetting player and adding track...');
             await TrackPlayer.reset();
             await TrackPlayer.add(track);
+
+            try {
+                await applyDesiredRoute();
+            } catch (e) {
+                console.warn('⚠️ applyDesiredRoute failed before play:', e);
+            }
+
             console.log('▶️ Starting playback...');
             await TrackPlayer.play();
 
@@ -130,6 +133,11 @@ class TrackPlayerService {
 
     async play() {
         if (!this.isInitialized) await this.initialize();
+        try {
+            await applyDesiredRoute();
+        } catch (e) {
+            console.warn('⚠️ applyDesiredRoute failed before resume:', e);
+        }
         await TrackPlayer.play();
     }
 
@@ -168,10 +176,6 @@ class TrackPlayerService {
         return await TrackPlayer.getDuration();
     }
 
-    /**
-     * Force audio system to pick up new route by pause/resume
-     * CRITICAL for audio routing to work on Android!
-     */
     async reattachAfterRouting(delayMs = 200) {
         try {
             console.log('🔄 Reattaching audio after routing change...');
@@ -179,17 +183,13 @@ class TrackPlayerService {
             const state = await this.getState();
 
             if (state === State.Playing) {
-                // Get current position
                 const position = await this.getPosition();
 
-                // Pause
                 await TrackPlayer.pause();
                 console.log('⏸️ Paused');
 
-                // Wait for audio system to switch
                 await new Promise(res => setTimeout(res, delayMs));
 
-                // Resume from same position
                 await TrackPlayer.seekTo(position);
                 await TrackPlayer.play();
                 console.log('▶️ Resumed');
@@ -206,87 +206,91 @@ class TrackPlayerService {
 
 export const trackPlayerService = new TrackPlayerService();
 
-// Playback service for react-native-track-player
 export async function PlaybackService() {
-    console.log('🎵 PlaybackService registered');
+    console.log('🎵🎵🎵 PlaybackService function called - setting up event listeners');
 
-    const subscriptions: Array<{ remove: () => void } | (() => void) | any> = [];
+    TrackPlayer.addEventListener(Event.RemotePlay, async () => {
+        console.log('▶️▶️▶️ RemotePlay event received');
+        try {
+            await applyDesiredRoute();
+        } catch (e) {
+            console.warn('⚠️ applyDesiredRoute failed for RemotePlay:', e);
+        }
+        await TrackPlayer.play();
+    });
 
-    subscriptions.push(
-        TrackPlayer.addEventListener(Event.RemotePlay, async () => {
-            console.log('▶️ RemotePlay');
-            await TrackPlayer.play();
-        })
-    );
+    TrackPlayer.addEventListener(Event.RemotePause, async () => {
+        console.log('⏸️⏸️⏸️ RemotePause event received');
+        await TrackPlayer.pause();
+    });
 
-    subscriptions.push(
-        TrackPlayer.addEventListener(Event.RemotePause, async () => {
-            console.log('⏸️ RemotePause');
+    TrackPlayer.addEventListener(Event.RemoteNext, async () => {
+        console.log('⏭️⏭️⏭️ RemoteNext event received - START');
+        try {
+            const nextCallback = getNextSongCallback();
+            console.log('📞 Next callback is:', nextCallback ? 'REGISTERED' : 'NULL');
+            if (nextCallback) {
+                console.log('🎵 Calling nextSong callback NOW');
+                nextCallback();
+                console.log('✅ nextSong callback completed');
+            } else {
+                console.error('❌ No nextSong callback registered!');
+            }
+        } catch (error) {
+            console.error('❌ Error in RemoteNext handler:', error);
+        }
+        console.log('⏭️⏭️⏭️ RemoteNext event received - END');
+    });
+
+    TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
+        console.log('⏮️⏮️⏮️ RemotePrevious event received - START');
+        try {
+            const previousCallback = getPreviousSongCallback();
+            console.log('📞 Previous callback is:', previousCallback ? 'REGISTERED' : 'NULL');
+            if (previousCallback) {
+                console.log('🎵 Calling previousSong callback NOW');
+                previousCallback();
+                console.log('✅ previousSong callback completed');
+            } else {
+                console.error('❌ No previousSong callback registered!');
+            }
+        } catch (error) {
+            console.error('❌ Error in RemotePrevious handler:', error);
+        }
+        console.log('⏮️⏮️⏮️ RemotePrevious event received - END');
+    });
+
+    TrackPlayer.addEventListener(Event.RemoteSeek, async ({ position }) => {
+        console.log('⏩⏩⏩ RemoteSeek to', position);
+        await TrackPlayer.seekTo(position);
+    });
+
+    TrackPlayer.addEventListener(Event.RemoteStop, async () => {
+        console.log('⏹️⏹️⏹️ RemoteStop event received');
+        try {
+            await TrackPlayer.reset();
+        } catch (e) {
+            console.warn('⚠️ reset failed:', e);
             await TrackPlayer.pause();
-        })
-    );
+        }
+    });
 
-    subscriptions.push(
-        TrackPlayer.addEventListener(Event.RemoteNext, async () => {
-            console.log('⏭️ RemoteNext');
-            try {
-                await TrackPlayer.skipToNext();
-            } catch (e) {
-                console.warn('⚠️ skipToNext failed:', e);
-            }
-        })
-    );
+    TrackPlayer.addEventListener(Event.PlaybackError, (err) => {
+        console.error('❌❌❌ PlaybackError event:', err);
+    });
 
-    subscriptions.push(
-        TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
-            console.log('⏮️ RemotePrevious');
-            try {
-                await TrackPlayer.skipToPrevious();
-            } catch (e) {
-                console.warn('⚠️ skipToPrevious failed:', e);
-            }
-        })
-    );
-
-    subscriptions.push(
-        TrackPlayer.addEventListener(Event.RemoteSeek, async ({ position }) => {
-            console.log('⏩ RemoteSeek to', position);
-            await TrackPlayer.seekTo(position);
-        })
-    );
-
-    subscriptions.push(
-        TrackPlayer.addEventListener(Event.RemoteStop, async () => {
-            console.log('⏹️ RemoteStop');
-            try {
-                await TrackPlayer.reset();
-            } catch (e) {
-                console.warn('⚠️ reset failed:', e);
+    TrackPlayer.addEventListener(Event.RemoteDuck, async (data) => {
+        console.log('🔈🔈🔈 RemoteDuck', data);
+        try {
+            if (data.paused) {
                 await TrackPlayer.pause();
+            } else {
+                await TrackPlayer.play();
             }
-        })
-    );
+        } catch (e) {
+            console.warn('⚠️ RemoteDuck handling failed:', e);
+        }
+    });
 
-    subscriptions.push(
-        TrackPlayer.addEventListener(Event.PlaybackError, (err) => {
-            console.error('❌ PlaybackError event:', err);
-        })
-    );
-
-    subscriptions.push(
-        TrackPlayer.addEventListener(Event.RemoteDuck, async (data) => {
-            console.log('🔈 RemoteDuck', data);
-            try {
-                if (data.paused) {
-                    await TrackPlayer.pause();
-                } else {
-                    await TrackPlayer.play();
-                }
-            } catch (e) {
-                console.warn('⚠️ RemoteDuck handling failed:', e);
-            }
-        })
-    );
-
-    return;
+    console.log('✅✅✅ All event listeners registered in PlaybackService');
 }

@@ -20,6 +20,7 @@ import HomeScreen from '../screens/HomeScreen';
 import LibraryScreen from '../screens/LibraryScreen';
 import UploadScreen from '../screens/UploadScreen';
 import SettingsScreen from '../screens/SettingsScreen';
+import CarModeScreen from '../screens/CarModeScreen';
 import { colors } from '../styles/theme';
 
 const Stack = createStackNavigator();
@@ -230,6 +231,11 @@ const AppNavigator = () => {
         <>
             <Stack.Navigator screenOptions={{ headerShown: false }}>
                 <Stack.Screen name="Main" component={MainTabs} />
+                <Stack.Screen
+                    name="CarMode"
+                    component={CarModeScreen}
+                    options={{ presentation: 'transparentModal' as any }}
+                />
             </Stack.Navigator>
 
             {/* Loading screen overlay - only show AFTER pin check is complete and pin is unlocked */}

@@ -11,6 +11,7 @@ import {
 import { Video, ResizeMode } from 'expo-av';
 import { Gyroscope } from 'expo-sensors';
 import { useMusic } from '../contexts/MusicContext';
+import { useCarMode } from '../contexts/CarModeContext';
 import { colors, spacing, typography, borderRadius } from '../styles/theme';
 import { videos, getRandomVideo } from '../utils/assets';
 
@@ -22,6 +23,7 @@ interface ZumiAssistantProps {
 }
 
 const ZumiAssistant: React.FC<ZumiAssistantProps> = ({ onUserActivity }) => {
+    const { isCarMode } = useCarMode();
     const { playRandomSong } = useMusic();
     const [showControls, setShowControls] = useState(false);
     const [currentVideo, setCurrentVideo] = useState(videos.zumiWave);
@@ -168,6 +170,8 @@ const ZumiAssistant: React.FC<ZumiAssistantProps> = ({ onUserActivity }) => {
     const handleScreenTouch = () => {
         resetInactivityTimer();
     };
+
+    if (isCarMode) return null;
 
     return (
         <>

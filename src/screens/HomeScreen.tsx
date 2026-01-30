@@ -6,6 +6,7 @@ import {
     StyleSheet,
     ScrollView,
     RefreshControl,
+    TouchableOpacity,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useMusic } from '../contexts/MusicContext';
@@ -14,11 +15,18 @@ import AlbumCard from '../components/AlbumCard';
 import MiniPlayer from '../components/MiniPlayer';
 import ZumiAssistant from '../components/ZumiAssistant';
 import { colors, spacing, typography } from '../styles/theme';
+import { useNavigation } from '@react-navigation/native';
+import { Ionicons } from '@expo/vector-icons';
+import { useCarMode } from '../contexts/CarModeContext';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 const HomeScreen: React.FC = () => {
+    const navigation = useNavigation();
+    const { enterCarMode } = useCarMode();
     const { user } = useAuth();
     const { albums, refreshSongs } = useMusic();
     const [refreshing, setRefreshing] = useState(false);
+    const insets = useSafeAreaInsets();
 
     const onRefresh = async () => {
         setRefreshing(true);
@@ -30,6 +38,11 @@ const HomeScreen: React.FC = () => {
         // This will be called by ZumiAssistant when user activity is detected
     };
 
+    const openCarMode = (videoSource?: any) => {
+        enterCarMode();
+        // Pass optional videoSource if needed
+        (navigation as any).navigate('CarMode', { videoSource });
+    };
 
     return (
         <View
@@ -44,6 +57,13 @@ const HomeScreen: React.FC = () => {
             >
                 {/* Zumi Assistant - Fixed Position Overlay */}
                 <ZumiAssistant onUserActivity={handleUserActivity} />
+
+                {/* Car Mode button - fixed top-left (outside scroll content) */}
+                <View style={[styles.carWrapper, { top: insets.top + spacing.md }]} pointerEvents="box-none">
+                    <TouchableOpacity onPress={() => openCarMode()} style={styles.carButton} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                        <Ionicons name="car" size={22} color="#fff" />
+                    </TouchableOpacity>
+                </View>
 
                 <ScrollView
                     style={styles.scrollView}
@@ -112,6 +132,19 @@ const styles = StyleSheet.create({
     },
     header: {
         marginBottom: spacing.lg,
+    },
+    carWrapper: {
+        position: 'absolute',
+        left: spacing.md,
+        zIndex: 1102,
+    },
+    carButton: {
+        backgroundColor: colors.accent,
+        borderRadius: 50,
+        paddingHorizontal: spacing.sm,
+        paddingVertical: spacing.xs,
+        elevation: 8,
+        zIndex: 1103,
     },
     greeting: {
         ...typography.h1,
