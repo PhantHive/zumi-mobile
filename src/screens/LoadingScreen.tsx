@@ -75,7 +75,7 @@ const LoadingScreen: React.FC<LoadingScreenProps> = ({ message, progress = 0 }) 
             >
                 {/* Background hologram video */}
                 <Video
-                    source={videos.zumiWave}
+                    source={videos.zumiGreet}
                     style={styles.backgroundVideo}
                     resizeMode={ResizeMode.COVER}
                     shouldPlay

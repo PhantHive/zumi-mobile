@@ -4,7 +4,7 @@
     "slug": "zumi-mobile",
     "version": "1.0.7",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/images/zumi-icon.png",
     "userInterfaceStyle": "dark",
     "splash": {
       "image": "./assets/splash-icon.png",
@@ -26,7 +26,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
+        "foregroundImage": "./assets/images/zumi-icon.png",
         "backgroundColor": "#6e254a"
       },
       "package": "fr.phearion.zumi",
@@ -62,7 +62,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/icon.png",
+          "icon": "./assets/images/zumi-icon.png",
           "color": "#ffffff"
         }
       ],

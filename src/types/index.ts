@@ -8,6 +8,7 @@ export interface Song {
     filepath: string;
     albumId: string;
     thumbnailUrl?: string;
+    videoUrl?: string; // URL to the music video file
     // Enhanced metadata
     uploadedBy?: string; // Email of uploader
     visibility?: 'public' | 'private'; // Song visibility

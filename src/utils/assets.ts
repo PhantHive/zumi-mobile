@@ -6,8 +6,9 @@
 
 export const images = {
     mascot: require('../../assets/splash-icon.png'),
-    zumi: require('../../assets/images/zumi.png'),
-    placeholder: require('../../assets/images/placeholder.jpg'),
+    // Use the new app icon as the in-app avatar image (replacing old zumi.png)
+    zumi: require('../../assets/images/zumi-icon.png'),
+    placeholder: require('../../assets/images/placeholder.png'),
 };
 
 export const voices = {
@@ -20,10 +21,12 @@ export const voices = {
 };
 
 export const videos = {
-    zumiHi1: require('../../assets/images/zumi-interactions/zumi-hi-1.mp4'),
-    zumiHi2: require('../../assets/images/zumi-interactions/zumi-hi-2.mp4'),
-    zumiHi3: require('../../assets/images/zumi-interactions/zumi-hi-3.mp4'),
-    zumiWave: require('../../assets/images/zumi-interactions/zumi-wave.mp4'),
+    // New consolidated interaction videos
+    zumiGreet: require('../../assets/images/zumi-interactions/zumi-greet.mp4'),
+    zumiEnjoyMusic: require('../../assets/images/zumi-interactions/zumi-enjoy-music.mp4'),
+    zumiIdle: require('../../assets/images/zumi-interactions/zumi-idle.mp4'),
+    // Loop clip: final 4 seconds of enjoy-music for smooth looping (create with ffmpeg)
+    zumiEnjoyMusicLoop: require('../../assets/images/zumi-interactions/zumi-enjoy-music-loop.mp4'),
 };
 
 // Helper function to get a random voice
@@ -32,8 +35,8 @@ export const getRandomVoice = () => {
     return voiceList[Math.floor(Math.random() * voiceList.length)];
 };
 
-// Helper function to get a random video
+// Helper function to get a random video (use only the supported interactions)
 export const getRandomVideo = () => {
-    const videoList = [videos.zumiHi1, videos.zumiHi2, videos.zumiHi3, videos.zumiWave];
+    const videoList = [videos.zumiGreet, videos.zumiEnjoyMusic, videos.zumiIdle];
     return videoList[Math.floor(Math.random() * videoList.length)];
 };

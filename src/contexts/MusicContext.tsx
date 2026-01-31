@@ -9,7 +9,6 @@ import { useAuth } from './AuthContext';
 import { trackPlayerService } from '../services/trackPlayerService';
 import { PermissionService } from '../services/permissionService';
 import { resizeArtworkForTrackPlayer } from '../utils/imageUtils';
-import { setPlaybackCallbacks } from '@services/playbackHandler';
 
 
 interface Album {
@@ -160,20 +159,31 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
             nextSong();
         });
 
+        // Listen for track changes from remote controls
+        const trackChangedListener = TrackPlayer.addEventListener(Event.PlaybackActiveTrackChanged, async ({ index, track }) => {
+            if (!mounted || !track) return;
+            console.log('📻 Track changed to:', track.title, 'at index:', index);
+
+            // Find the song in our albums by track ID
+            const allSongs = albumsRef.current.flatMap(album => album.songs);
+            const song = allSongs.find(s => s.id === track.id);
+            if (song) {
+                console.log('✅ Updating currentSong to:', song.title);
+                setCurrentSong(song);
+            }
+        });
+
         return () => {
             mounted = false;
             stateListener.remove();
             queueEndedListener.remove();
+            trackChangedListener.remove();
             if (positionInterval.current) {
                 clearInterval(positionInterval.current);
             }
         };
     }, []);
 
-    useEffect(() => {
-        console.log('🎮 Registering playback callbacks for remote controls');
-        setPlaybackCallbacks(nextSong, previousSong);
-    }, [albums, currentSong]);
 
     useEffect(() => {
         if (isPlaying) {
@@ -361,60 +371,61 @@ export const MusicProvider: React.FC<{ children: ReactNode }> = ({ children }) =
                 trackPlayerInitialized.current = true;
             }
 
-            const token = await SecureStore.getItemAsync('serverToken');
-            const audioUrl = apiClient.getStreamUrl(song.id);
-            console.log('Audio URL:', audioUrl);
+            // Find the album containing this song
+            const currentAlbum = albums.find(album =>
+                album.songs.some(s => s.id === song.id)
+            );
 
-            let artworkUrl;
-            if (song.thumbnailUrl) {
-                try {
-                    console.log('Step 1: Getting thumbnail URL...');
-                    const originalArtworkUrl = await apiClient.getThumbnailUrlWithAuth(song.thumbnailUrl);
-                    console.log('Step 2: Got original artwork, type:', originalArtworkUrl?.substring(0, 50));
-
-                    if (originalArtworkUrl) {
-                        console.log('Step 3: Resizing artwork...');
-                        const resizedUrl = await resizeArtworkForTrackPlayer(originalArtworkUrl);
-                        console.log('Step 4: Resize complete:', resizedUrl?.substring(0, 100));
-
-                        if (resizedUrl) {
-                            artworkUrl = resizedUrl;
-                            console.log('SUCCESS: Using resized artwork');
-                        } else {
-                            console.warn('WARNING: Resize returned null, using original');
-                            artworkUrl = originalArtworkUrl;
-                        }
-                    } else {
-                        console.warn('WARNING: No original artwork URL returned');
-                    }
-                } catch (e) {
-                    console.error('ERROR processing artwork:', e);
-                }
-            } else {
-                console.log('INFO: No thumbnail URL for this song');
+            if (!currentAlbum) {
+                console.error('Song not found in any album');
+                return;
             }
 
-            console.log('Final artwork URL:', artworkUrl ? 'SET' : 'NONE');
+            const songIndex = currentAlbum.songs.findIndex(s => s.id === song.id);
+            console.log(`Playing song ${songIndex + 1}/${currentAlbum.songs.length} from album "${currentAlbum.name}"`);
 
-            const track = {
-                id: song.id,
-                url: audioUrl,
-                title: song.title,
-                artist: song.artist || 'Unknown Artist',
-                album: song.genre || 'Unknown Album',
-                artwork: artworkUrl,
-                headers: {
-                    'Authorization': `Bearer ${token}`
+            const token = await SecureStore.getItemAsync('serverToken');
+
+            // Prepare all tracks in the album
+            const tracks = await Promise.all(currentAlbum.songs.map(async (albumSong) => {
+                const audioUrl = apiClient.getStreamUrl(albumSong.id);
+
+                let artworkUrl;
+                if (albumSong.thumbnailUrl) {
+                    try {
+                        const originalArtworkUrl = await apiClient.getThumbnailUrlWithAuth(albumSong.thumbnailUrl);
+                        if (originalArtworkUrl) {
+                            const resizedUrl = await resizeArtworkForTrackPlayer(originalArtworkUrl);
+                            artworkUrl = resizedUrl || originalArtworkUrl;
+                        }
+                    } catch (e) {
+                        console.error('Error processing artwork for', albumSong.title, e);
+                    }
                 }
-            };
 
-            console.log('Track prepared:', {
-                id: track.id,
-                title: track.title,
-                hasArtwork: !!track.artwork
-            });
+                return {
+                    id: albumSong.id,
+                    url: audioUrl,
+                    title: albumSong.title,
+                    artist: albumSong.artist || 'Unknown Artist',
+                    album: albumSong.genre || 'Unknown Album',
+                    artwork: artworkUrl,
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                };
+            }));
 
-            await trackPlayerService.addAndPlay(track);
+            console.log(`Prepared ${tracks.length} tracks for queue`);
+
+            // Reset queue and add all tracks
+            await TrackPlayer.reset();
+            await TrackPlayer.add(tracks);
+
+            // Skip to the selected song
+            await TrackPlayer.skip(songIndex);
+            await TrackPlayer.play();
+
             setCurrentSong(song);
             setIsPlaying(true);
 

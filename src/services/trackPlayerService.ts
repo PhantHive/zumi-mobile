@@ -36,13 +36,50 @@ class TrackPlayerService {
                     Capability.Pause,
                     Capability.SkipToNext,
                 ],
+                notificationCapabilities: [
+                    Capability.Play,
+                    Capability.Pause,
+                    Capability.SkipToNext,
+                    Capability.SkipToPrevious,
+                    Capability.SeekTo,
+                ],
                 progressUpdateEventInterval: 1,
+                icon: require('../../assets/images/zumi-icon.png'),
             });
 
             await TrackPlayer.setRepeatMode(RepeatMode.Off);
 
+            // Register event listeners HERE instead of in service.js
+            console.log('🎧 Registering remote control event listeners...');
+
+            TrackPlayer.addEventListener(Event.RemotePlay, async () => {
+                console.log('▶️▶️▶️ RemotePlay event');
+                await TrackPlayer.play();
+            });
+
+            TrackPlayer.addEventListener(Event.RemotePause, async () => {
+                console.log('⏸️⏸️⏸️ RemotePause event');
+                await TrackPlayer.pause();
+            });
+
+            TrackPlayer.addEventListener(Event.RemoteNext, async () => {
+                console.log('⏭️⏭️⏭️ RemoteNext event');
+                await TrackPlayer.skipToNext();
+            });
+
+            TrackPlayer.addEventListener(Event.RemotePrevious, async () => {
+                console.log('⏮️⏮️⏮️ RemotePrevious event');
+                await TrackPlayer.skipToPrevious();
+            });
+
+            TrackPlayer.addEventListener(Event.RemoteSeek, async ({ position }) => {
+                console.log('⏩⏩⏩ RemoteSeek event:', position);
+                await TrackPlayer.seekTo(position);
+            });
+
+            console.log('✅ TrackPlayer initialized with MediaSession and event listeners');
+
             this.isInitialized = true;
-            console.log('✅ TrackPlayer initialized');
         } catch (e) {
             console.error('❌ TrackPlayer init error:', e);
             throw e;

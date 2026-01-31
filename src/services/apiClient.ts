@@ -168,6 +168,16 @@ class ApiClient {
         return token ? `${url}?token=${token}` : url;
     }
 
+    getVideoStreamUrl(songId: number): string {
+        return `${env.api.baseUrl}/api/songs/${songId}/stream-video`;
+    }
+
+    async getVideoStreamUrlWithAuth(songId: number): Promise<string> {
+        const token = await SecureStore.getItemAsync('serverToken');
+        const url = `${env.api.baseUrl}/api/songs/${songId}/stream-video`;
+        return token ? `${url}?token=${token}` : url;
+    }
+
     getThumbnailUrl(filename: string): string {
         return `${env.api.baseUrl}/api/songs/thumbnails/${filename}`;
     }

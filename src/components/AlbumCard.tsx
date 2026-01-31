@@ -115,9 +115,9 @@ const AlbumCard: React.FC<AlbumCardProps> = ({ album }) => {
                 />
             </TouchableOpacity>
 
-            {/* Song Grid - Conditional rendering */}
+            {/* Song List - Conditional rendering */}
             {isExpanded && (
-                <View style={styles.songsGrid}>
+                <View style={styles.songsList}>
                     {album.songs.map((song) => (
                         <SongCard key={song.id} song={song} accentColor={accentColor} />
                     ))}
@@ -150,24 +150,47 @@ const SongCard: React.FC<{ song: Song; accentColor: string }> = ({ song, accentC
         <TouchableOpacity
             style={[
                 styles.songCard,
-                isActive && { backgroundColor: 'rgba(0, 0, 0, 0.3)' }
+                isActive && {
+                    backgroundColor: 'rgba(0, 0, 0, 0.4)',
+                    borderColor: hexToRgba(accentColor, 0.5)
+                }
             ]}
             onPress={() => playSong(song)}
+            activeOpacity={0.7}
         >
-            <ImageWithLoader
-                source={thumbnailUrl ? { uri: thumbnailUrl } : images.placeholder}
-                defaultSource={images.placeholder}
-                containerStyle={styles.songThumbnailContainer}
-                style={styles.songThumbnail}
-                resizeMode="cover"
+            <View style={styles.songThumbnailWrapper}>
+                <ImageWithLoader
+                    source={thumbnailUrl ? { uri: thumbnailUrl } : images.placeholder}
+                    defaultSource={images.placeholder}
+                    containerStyle={styles.songThumbnailContainer}
+                    style={styles.songThumbnail}
+                    resizeMode="cover"
+                />
+                {isActive && (
+                    <View style={[styles.playingIndicatorOverlay]}>
+                        <View style={[styles.playingIndicator, { backgroundColor: accentColor }]} />
+                    </View>
+                )}
+                {song.videoUrl && (
+                    <View style={styles.videoBadge}>
+                        <Ionicons name="videocam" size={12} color="#fff" />
+                    </View>
+                )}
+            </View>
+            <View style={styles.songInfo}>
+                <Text style={styles.songTitle} numberOfLines={1}>
+                    {song.title}
+                </Text>
+                <Text style={styles.songArtist} numberOfLines={1}>
+                    {song.artist}
+                </Text>
+            </View>
+            <Ionicons
+                name={isActive ? "play-circle" : "play-circle-outline"}
+                size={28}
+                color={isActive ? accentColor : colors.textSecondary}
+                style={styles.playIcon}
             />
-            {isActive && <View style={[styles.playingIndicator, { backgroundColor: accentColor }]} />}
-            <Text style={styles.songTitle} numberOfLines={2}>
-                {song.title}
-            </Text>
-            <Text style={styles.songArtist} numberOfLines={1}>
-                {song.artist}
-            </Text>
         </TouchableOpacity>
     );
 };
@@ -216,6 +239,10 @@ const styles = StyleSheet.create({
         height: 72,
         position: 'relative',
     },
+    coverImageContainer: {
+        width: '100%',
+        height: '100%',
+    },
     albumCover: {
         width: '100%',
         height: '100%',
@@ -250,64 +277,93 @@ const styles = StyleSheet.create({
     chevronIcon: {
         marginLeft: spacing.xs,
     },
-    songsGrid: {
-        flexDirection: 'row',
-        flexWrap: 'wrap',
-        gap: spacing.sm,
+    songsList: {
+        gap: spacing.xs,
         marginTop: spacing.sm,
-        justifyContent: 'space-between',
     },
     songCard: {
-        flexBasis: '48%',
-        backgroundColor: 'rgba(255, 255, 255, 0.03)',
+        flexDirection: 'row',
+        alignItems: 'center',
+        backgroundColor: 'rgba(255, 255, 255, 0.04)',
         borderRadius: 10,
         padding: spacing.sm,
-        position: 'relative',
+        gap: spacing.sm,
         borderWidth: 1,
-        borderColor: 'rgba(255, 255, 255, 0.05)',
-        alignItems: 'stretch',
-        // ensure consistent height so grid items align
-        marginBottom: spacing.sm,
+        borderColor: 'rgba(255, 255, 255, 0.06)',
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.1,
+        shadowRadius: 4,
+        elevation: 2,
+    },
+    songThumbnailWrapper: {
+        position: 'relative',
+        width: 56,
+        height: 56,
+        borderRadius: 8,
+        overflow: 'hidden',
     },
     songThumbnail: {
         width: '100%',
-        aspectRatio: 1,
-        borderRadius: 6,
-        marginBottom: spacing.xs,
+        height: '100%',
+        borderRadius: 8,
         backgroundColor: 'rgba(255, 255, 255, 0.02)',
-        overflow: 'hidden',
     },
     songThumbnailContainer: {
         width: '100%',
-        // let the inner image's aspectRatio determine height
-    },
-    coverImageContainer: {
-        width: '100%',
         height: '100%',
     },
-    playingIndicator: {
+    videoBadge: {
         position: 'absolute',
-        top: spacing.sm + 4,
-        right: spacing.sm + 4,
-        width: 6,
-        height: 6,
-        borderRadius: 3,
+        top: 4,
+        right: 4,
+        backgroundColor: 'rgba(181, 101, 216, 0.9)',
+        borderRadius: 10,
+        padding: 3,
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.3,
+        shadowRadius: 2,
+        elevation: 3,
+    },
+    playingIndicatorOverlay: {
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        bottom: 0,
+        backgroundColor: 'rgba(0, 0, 0, 0.3)',
+        justifyContent: 'center',
+        alignItems: 'center',
+    },
+    playingIndicator: {
+        width: 8,
+        height: 8,
+        borderRadius: 4,
         shadowColor: colors.accent,
         shadowOffset: { width: 0, height: 0 },
-        shadowOpacity: 0.8,
-        shadowRadius: 4,
+        shadowOpacity: 0.9,
+        shadowRadius: 6,
+        elevation: 4,
+    },
+    songInfo: {
+        flex: 1,
+        justifyContent: 'center',
+        gap: 2,
     },
     songTitle: {
         color: colors.text,
-        fontSize: 13,
+        fontSize: 14,
         fontWeight: '600',
-        marginBottom: 2,
-        lineHeight: 16,
+        lineHeight: 18,
     },
     songArtist: {
         color: colors.textSecondary,
-        fontSize: 11,
-        opacity: 0.6,
+        fontSize: 12,
+        opacity: 0.7,
+    },
+    playIcon: {
+        marginLeft: spacing.xs,
     },
 });
 

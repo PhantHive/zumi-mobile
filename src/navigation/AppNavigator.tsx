@@ -21,6 +21,7 @@ import LibraryScreen from '../screens/LibraryScreen';
 import UploadScreen from '../screens/UploadScreen';
 import SettingsScreen from '../screens/SettingsScreen';
 import CarModeScreen from '../screens/CarModeScreen';
+import YouTubeImportScreen from '../screens/YouTubeImportScreen';
 import { colors } from '../styles/theme';
 
 const Stack = createStackNavigator();
@@ -236,6 +237,7 @@ const AppNavigator = () => {
                     component={CarModeScreen}
                     options={{ presentation: 'transparentModal' as any }}
                 />
+                <Stack.Screen name="YouTubeImport" component={YouTubeImportScreen} />
             </Stack.Navigator>
 
             {/* Loading screen overlay - only show AFTER pin check is complete and pin is unlocked */}

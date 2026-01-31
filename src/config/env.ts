@@ -18,6 +18,7 @@ interface EnvConfig {
     deepLink: {
         scheme: string;
     };
+    youtubeApiKey?: string;
 }
 
 // Get config from app.json extra field (works in standalone builds)
@@ -50,6 +51,7 @@ const env: EnvConfig = {
     deepLink: {
         scheme: extra.deepLinkScheme || getEnvVar('EXPO_PUBLIC_DEEP_LINK_SCHEME', 'exp'),
     },
+    youtubeApiKey: extra.youtubeApiKey || getEnvVar('EXPO_PUBLIC_YOUTUBE_API_KEY', ''),
 };
 
 // Log the loaded configuration for debugging
@@ -57,5 +59,6 @@ console.log('📱 Environment Configuration Loaded:');
 console.log('  - Backend URL:', env.api.baseUrl);
 console.log('  - Deep Link Scheme:', env.deepLink.scheme);
 console.log('  - Is Development:', isDevelopment);
+console.log('  - YouTube API Key configured:', !!env.youtubeApiKey);
 
 export default env;

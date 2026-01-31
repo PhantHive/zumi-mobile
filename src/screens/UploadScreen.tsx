@@ -26,6 +26,7 @@ import { GENRES, Genre } from '../types';
 import { colors, spacing, typography, borderRadius } from '../styles/theme';
 import { useRoute, useNavigation } from '@react-navigation/native';
 import * as FileSystem from 'expo-file-system';
+import { importYoutube } from '../services';
 
 const UploadScreen: React.FC = () => {
     const { refreshSongs } = useMusic();
@@ -33,6 +34,7 @@ const UploadScreen: React.FC = () => {
     const route: any = useRoute();
     const navigation: any = useNavigation();
     const [audioFile, setAudioFile] = useState<any>(null);
+    // YouTube import moved to dedicated screen; modal/paste-URL flow removed
     const [thumbnail, setThumbnail] = useState<any>(null);
     const [existingThumbnailUrl, setExistingThumbnailUrl] = useState<string | null>(null);
     const [existingAudioName, setExistingAudioName] = useState<string | null>(null);
@@ -371,6 +373,17 @@ const UploadScreen: React.FC = () => {
     return (
         <ScrollView style={styles.container} contentContainerStyle={styles.content}>
             <Text style={styles.title}>Upload Music</Text>
+
+            {/* YouTube Import quick action */}
+            <View style={{ marginVertical: spacing.sm }}>
+                <TouchableOpacity
+                    style={[styles.fileButton, { backgroundColor: '#222' }]}
+                    onPress={() => navigation.navigate('YouTubeImport')}
+                >
+                    <Ionicons name="logo-youtube" size={20} color={colors.text} />
+                    <Text style={[styles.fileButtonText, { marginLeft: 8 }]}>Import from YouTube</Text>
+                </TouchableOpacity>
+            </View>
 
             {/* Audio/Thumbnail Pickers with optional thumbnail background */}
             {/* Show selected thumbnail (thumbnail) or existing thumbnail from song (existingThumbnailUrl) */}
@@ -845,6 +858,20 @@ const styles = StyleSheet.create({
         ...typography.body,
         fontWeight: '600',
         textAlign: 'center',
+    },
+    button: {
+        flex: 1,
+        backgroundColor: colors.card,
+        padding: spacing.md,
+        borderRadius: borderRadius.md,
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginHorizontal: spacing.sm,
+    },
+    buttonText: {
+        ...typography.body,
+        color: colors.text,
+        fontWeight: '600',
     },
 });
 

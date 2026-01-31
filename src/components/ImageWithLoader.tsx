@@ -1,7 +1,9 @@
 // src/components/ImageWithLoader.tsx
 import React, { useState, useRef, useEffect } from 'react';
 import { View, Image, StyleSheet, Animated, ImageSourcePropType, ImageURISource, ImageStyle, ViewStyle, StyleProp } from 'react-native';
+import * as FileSystem from 'expo-file-system/legacy';
 import { LinearGradient } from 'expo-linear-gradient';
+import { images } from '../utils/assets';
 
 interface ImageWithLoaderProps {
     source: ImageSourcePropType;
@@ -23,6 +25,7 @@ const ImageWithLoader: React.FC<ImageWithLoaderProps> = ({
 }) => {
     const [isLoading, setIsLoading] = useState(true);
     const [hasError, setHasError] = useState(false);
+    const [resolvedSource, setResolvedSource] = useState<ImageSourcePropType | undefined>(undefined);
     const fadeAnim = useRef(new Animated.Value(0)).current;
     const shimmerAnim = useRef(new Animated.Value(0)).current;
 
@@ -71,6 +74,46 @@ const ImageWithLoader: React.FC<ImageWithLoaderProps> = ({
         fadeAnim.setValue(1);
     };
 
+    // Resolve file:// or cache URIs to ensure the image exists. If missing, use placeholder.
+    useEffect(() => {
+        let mounted = true;
+
+        async function resolve() {
+            try {
+                // If source is an object with uri property, check it
+                if (typeof source === 'object' && source !== null && 'uri' in source) {
+                    const uri = (source as ImageURISource).uri || '';
+                    // For local file URIs (file://) or app cache paths (/data/...), verify existence
+                    if (uri.startsWith('file:') || uri.startsWith('/data') || uri.startsWith(FileSystem.cacheDirectory || '')) {
+                        try {
+                            const info = await FileSystem.getInfoAsync(uri);
+                            if (mounted && info.exists) {
+                                setResolvedSource(source);
+                                return;
+                            }
+                        } catch (e) {
+                            // getInfoAsync can throw for malformed paths; fall through to placeholder
+                        }
+                        // fall back to placeholder
+                        if (mounted) setResolvedSource(images.placeholder);
+                        return;
+                    }
+                }
+
+                // Otherwise use the provided source (remote URL or static resource)
+                if (mounted) setResolvedSource(source);
+            } catch (e) {
+                if (mounted) setResolvedSource(images.placeholder);
+            }
+        }
+
+        resolve();
+
+        return () => {
+            mounted = false;
+        };
+    }, [source]);
+
     const shimmerTranslate = shimmerAnim.interpolate({
         inputRange: [0, 1],
         outputRange: [-200, 200],
@@ -116,7 +159,7 @@ const ImageWithLoader: React.FC<ImageWithLoaderProps> = ({
             {/* Actual image - always rendered to maintain layout. Let the Image control sizing via its style (aspectRatio or explicit height). */}
             <Animated.View style={{ opacity: fadeAnim }}>
                 <Image
-                    source={source}
+                    source={resolvedSource || images.placeholder}
                     defaultSource={defaultSource}
                     style={[styles.image, style]}
                     resizeMode={resizeMode}
